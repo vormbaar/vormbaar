@@ -1,0 +1,16 @@
+[package]
+name = "vm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+
+[dependencies]
+bincode = "1.3.3"
+clap = { version = "4.2.4", features = ["derive"] }
+ron = "0.8.0"
+serde = { version = "1.0.160", features = ["derive"] }
+stringlit = "2.0.0"
