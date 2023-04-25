@@ -1,0 +1,17 @@
+(
+    state: (
+        constants: {},
+        functions: {
+            "factorial": ([
+                Return(If(BinaryOp(Lt, Arg("n"), Value(2)), Value(1), BinaryOp(Mul, Arg("n"), Call("factorial", {
+                    "n": BinaryOp(Sub, Arg("n"), Value(1)),
+                })))),
+            ]),
+            "main": ([
+                Return(Call("factorial", {
+                    "n": Arg("init"),
+                })),
+            ]),
+        },
+    ),
+)

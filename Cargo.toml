@@ -9,8 +9,11 @@ edition = "2021"
 lto = true
 
 [dependencies]
+anyhow = "1.0.70"
 bincode = "1.3.3"
 clap = { version = "4.2.4", features = ["derive"] }
+content_inspector = "0.2.4"
 ron = "0.8.0"
 serde = { version = "1.0.160", features = ["derive"] }
+serde-querystring = "0.2.1"
 stringlit = "2.0.0"

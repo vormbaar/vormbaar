@@ -1,16 +1,24 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+
+// todo: remove this one day
+// maybe replace with thiserror
+use anyhow::{anyhow, bail};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum Value {
     I32(i32),
-    U32(u32),
+    // U32(u32),
     None,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum BinaryOp {
     Add,
+    Sub,
+    Mul,
+    Lt,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -25,7 +33,7 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
-    Call(String, HashMap<String, Expr>),
+    Call(String, BTreeMap<String, Expr>),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,40 +52,46 @@ impl Function {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct State {
-    constants: HashMap<String, Value>,
-    functions: HashMap<String, Function>,
+    #[serde(default)]
+    constants: BTreeMap<String, Value>,
+    #[serde(default)]
+    functions: BTreeMap<String, Function>,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
-            constants: HashMap::new(),
-            functions: HashMap::new(),
+            constants: BTreeMap::new(),
+            functions: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Context {
-    arguments: HashMap<String, Value>,
-    variables: HashMap<String, Value>,
-    constants: HashMap<String, Value>,
+pub struct FunctionContext {
+    #[serde(default)]
+    arguments: BTreeMap<String, Value>,
+    #[serde(default)]
+    variables: BTreeMap<String, Value>,
+    #[serde(default)]
+    constants: BTreeMap<String, Value>,
 }
 
-impl Context {
+impl FunctionContext {
     pub fn new() -> Self {
         Self {
-            arguments: HashMap::new(),
-            variables: HashMap::new(),
-            constants: HashMap::new(),
+            arguments: BTreeMap::new(),
+            variables: BTreeMap::new(),
+            constants: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct VM {
+    #[serde(default)]
     state: State,
 }
 
@@ -85,48 +99,39 @@ impl VM {
     pub fn new() -> Self {
         Self {
             state: State {
-                constants: HashMap::new(),
-                functions: HashMap::new(),
+                constants: BTreeMap::new(),
+                functions: BTreeMap::new(),
             },
-        }
-    }
-
-    fn add_i32_and_u32(&self, a: i32, b: u32) -> Result<Value, &'static str> {
-        let val = (a as i64) + (b as i64);
-        if val < 0 {
-            Ok(Value::I32(val as i32))
-        } else {
-            Ok(Value::U32(val as u32))
         }
     }
 
     pub fn eval_expression(
         &self,
-        local_context: &Context,
+        local_context: &FunctionContext,
         expr: &Expr,
-    ) -> Result<Value, &'static str> {
+    ) -> anyhow::Result<Value> {
         match expr {
             Expr::Value(value) => Ok(*value),
             Expr::Const(name) => match local_context.constants.get(name) {
                 Some(value) => Ok(*value),
                 None => match self.state.constants.get(name) {
                     Some(value) => Ok(*value),
-                    None => Err("Cannot find constant"),
+                    None => Err(anyhow!("Cannot find constant named {:?}", name)),
                 },
             },
             Expr::Var(name) => match local_context.variables.get(name) {
                 Some(value) => Ok(*value),
-                None => Err("Cannot find variable"),
+                None => Err(anyhow!("Cannot find variable named {:?}", name)),
             },
             Expr::Arg(name) => match local_context.arguments.get(name) {
                 Some(value) => Ok(*value),
-                None => Err("Cannot find argument"),
+                None => Err(anyhow!("Cannot find argument named {:?}", name)),
             },
             Expr::If(comparison, if_true, if_false) => {
                 let comparison = self.eval_expression(local_context, comparison)?;
                 let is_true = match comparison {
                     Value::I32(value) => value != 0,
-                    Value::U32(value) => value != 0,
+                    // Value::U32(value) => value != 0,
                     Value::None => false,
                 };
                 if is_true {
@@ -139,22 +144,49 @@ impl VM {
                 let left = self.eval_expression(local_context, left)?;
                 let right = self.eval_expression(local_context, right)?;
                 match op {
-                    BinaryOp::Add => match left {
-                        Value::I32(left_value) => match right {
-                            Value::I32(right_value) => Ok(Value::I32(left_value + right_value)),
-                            Value::U32(right_value) => {
-                                self.add_i32_and_u32(left_value, right_value)
-                            }
-                            Value::None => Err("Cannot add None"),
-                        },
-                        Value::U32(left_value) => match right {
-                            Value::I32(right_value) => {
-                                self.add_i32_and_u32(right_value, left_value)
-                            }
-                            Value::U32(right_value) => Ok(Value::U32(left_value + right_value)),
-                            Value::None => Err("Cannot add None"),
-                        },
-                        Value::None => Err("Cannot add None"),
+                    BinaryOp::Add => match (left, right) {
+                        (Value::I32(left_value), Value::I32(right_value)) => {
+                            Ok(Value::I32(left_value + right_value))
+                        }
+                        // (Value::U32(left_value), Value::U32(right_value)) => {
+                        //     Ok(Value::U32(left_value + right_value))
+                        // }
+                        (Value::None, _) => Err(anyhow!("Cannot add number to None")),
+                        (_, Value::None) => Err(anyhow!("Cannot add number to None")),
+                        // _ => Err(anyhow!("Type mismatch")),
+                    },
+                    BinaryOp::Sub => match (left, right) {
+                        (Value::I32(left_value), Value::I32(right_value)) => {
+                            Ok(Value::I32(left_value - right_value))
+                        }
+                        // (Value::U32(left_value), Value::U32(right_value)) => {
+                        //     Ok(Value::U32(left_value - right_value))
+                        // }
+                        (Value::None, _) => Err(anyhow!("Cannot subtract number to None")),
+                        (_, Value::None) => Err(anyhow!("Cannot subtract number to None")),
+                        // _ => Err(anyhow!("Type mismatch")),
+                    },
+                    BinaryOp::Mul => match (left, right) {
+                        (Value::I32(left_value), Value::I32(right_value)) => {
+                            Ok(Value::I32(left_value * right_value))
+                        }
+                        // (Value::U32(left_value), Value::U32(right_value)) => {
+                        //     Ok(Value::U32(left_value * right_value))
+                        // }
+                        (Value::None, _) => Err(anyhow!("Cannot multiply number to None")),
+                        (_, Value::None) => Err(anyhow!("Cannot multiply number to None")),
+                        // _ => Err(anyhow!("Type mismatch")),
+                    },
+                    BinaryOp::Lt => match (left, right) {
+                        (Value::I32(left_value), Value::I32(right_value)) => {
+                            Ok(Value::I32(if left_value < right_value { 1 } else { 0 }))
+                        }
+                        // (Value::U32(left_value), Value::U32(right_value)) => {
+                        //     Ok(Value::U32(if left_value < right_value { 1 } else { 0 }))
+                        // }
+                        (Value::None, _) => Err(anyhow!("Cannot compare to number to None")),
+                        (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
+                        // _ => Err(anyhow!("Type mismatch")),
                     },
                 }
             }
@@ -166,26 +198,26 @@ impl VM {
     pub fn call_function(
         &self,
         name: &str,
-        calling_context: &Context,
-        args: &HashMap<String, Expr>,
-    ) -> Result<Value, &'static str> {
+        calling_context: &FunctionContext,
+        args: &BTreeMap<String, Expr>,
+    ) -> anyhow::Result<Value> {
         self.eval_function(
             calling_context,
             self.state
                 .functions
                 .get(name)
-                .ok_or("function not found!")?,
+                .ok_or_else(|| anyhow!(r#"function "{:?}" not found!"#, name))?,
             args,
         )
     }
 
     pub fn eval_function(
         &self,
-        calling_context: &Context,
+        calling_context: &FunctionContext,
         Function(fun): &Function,
-        args: &HashMap<String, Expr>,
-    ) -> Result<Value, &'static str> {
-        let mut local_context = Context::new();
+        args: &BTreeMap<String, Expr>,
+    ) -> anyhow::Result<Value> {
+        let mut local_context = FunctionContext::new();
         for (name, arg) in args {
             let value = self.eval_expression(&calling_context, &arg)?;
             local_context.arguments.insert(name.clone(), value);
@@ -207,17 +239,17 @@ impl VM {
         Ok(Value::None)
     }
 
-    pub fn add_constant(&mut self, name: &str, value: Value) -> Result<(), &'static str> {
+    pub fn add_constant(&mut self, name: &str, value: Value) -> anyhow::Result<()> {
         if self.state.constants.contains_key(name) {
-            return Err("constant already exists");
+            bail!(r#"constant "{:?}" already exists"#, name);
         }
         _ = self.state.constants.insert(name.to_owned(), value);
         Ok(())
     }
 
-    pub fn add_function(&mut self, name: &str, func: Function) -> Result<(), &'static str> {
+    pub fn add_function(&mut self, name: &str, func: Function) -> anyhow::Result<()> {
         if self.state.functions.contains_key(name) {
-            return Err("function already exists");
+            bail!(r#"function "{:?}" already exists"#, name);
         }
         _ = self.state.functions.insert(name.to_owned(), func);
         Ok(())
