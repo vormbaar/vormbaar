@@ -31,12 +31,12 @@ format [here](./factorial.ron).
 
 To try it out, you can do this:
 ```bash
-cargo run -- run factorial.ron "init=5"
+cargo run -- run factorial.ron "init=5&n=10"
 ```
 
 Which should print out the following:
 ```
-I32(120)
+Scalar(I32(120))
 ```
 
 ## Usage

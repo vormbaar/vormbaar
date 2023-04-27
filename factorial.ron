@@ -3,14 +3,31 @@
         constants: {},
         functions: {
             "factorial": ([
-                Return(If(BinaryOp(Lt, Arg("n"), Value(2)), Value(1), BinaryOp(Mul, Arg("n"), Call("factorial", {
-                    "n": BinaryOp(Sub, Arg("n"), Value(1)),
-                })))),
+                If(BinaryOp(Lt, Arg("n"), Value(2)), [
+                    Return(Value(1)),
+                ], [
+                    Return(BinaryOp(Mul, Arg("n"), Call("factorial", {
+                        "n": BinaryOp(Sub, Arg("n"), Value(1)),
+                    }))),
+                ]),
             ]),
             "main": ([
-                Return(Call("factorial", {
-                    "n": Arg("init"),
-                })),
+                For(Range(
+                    start: Value(0),
+                    stop: Arg("n"),
+                    step: Value(1),
+                    mode: Exclusive,
+                ), [
+                    If(BinaryOp(Eq, Arg("it"), BinaryOp(Sub, Arg("n"), Value(1))), [
+                        Return(Call("factorial", {
+                            "n": Arg("init"),
+                        })),
+                    ], [
+                        VarAssign("_", Call("factorial", {
+                            "n": Arg("init"),
+                        })),
+                    ]),
+                ]),
             ]),
         },
     ),

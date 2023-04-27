@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use stringlit::s;
 
 // todo: remove this one day
 // maybe replace with thiserror
@@ -7,10 +8,30 @@ use anyhow::{anyhow, bail};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum Value {
+pub enum Scalar {
     I32(i32),
-    // U32(u32),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Value {
+    Scalar(Scalar),
+    Vector(Vec<Value>),
     None,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Returned {
+    Early(Value),
+    Finished(Value),
+}
+
+impl Returned {
+    pub fn into_inner(self) -> Value {
+        match self {
+            Returned::Early(value) | Returned::Finished(value) => value,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -19,6 +40,7 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Lt,
+    Eq,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -30,7 +52,6 @@ pub enum Expr {
     Const(String),
     Var(String),
     Arg(String),
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
     Call(String, BTreeMap<String, Expr>),
@@ -38,9 +59,28 @@ pub enum Expr {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Instruction {
+    If(Box<Expr>, Vec<Instruction>, Vec<Instruction>),
     ConstAssign(String, Expr),
+    For(Range, Vec<Instruction>),
     VarAssign(String, Expr),
     Return(Expr),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum RangeMode {
+    Inclusive,
+    Exclusive,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Range {
+    Values(Vec<Value>),
+    Range {
+        start: Expr,
+        stop: Expr,
+        step: Expr,
+        mode: RangeMode,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -111,87 +151,96 @@ impl VM {
         expr: &Expr,
     ) -> anyhow::Result<Value> {
         match expr {
-            Expr::Value(value) => Ok(*value),
+            Expr::Value(value) => Ok(value.clone()),
             Expr::Const(name) => match local_context.constants.get(name) {
-                Some(value) => Ok(*value),
+                Some(value) => Ok(value.clone()),
                 None => match self.state.constants.get(name) {
-                    Some(value) => Ok(*value),
+                    Some(value) => Ok(value.clone()),
                     None => Err(anyhow!("Cannot find constant named {:?}", name)),
                 },
             },
             Expr::Var(name) => match local_context.variables.get(name) {
-                Some(value) => Ok(*value),
+                Some(value) => Ok(value.clone()),
                 None => Err(anyhow!("Cannot find variable named {:?}", name)),
             },
             Expr::Arg(name) => match local_context.arguments.get(name) {
-                Some(value) => Ok(*value),
+                Some(value) => Ok(value.clone()),
                 None => Err(anyhow!("Cannot find argument named {:?}", name)),
             },
-            Expr::If(comparison, if_true, if_false) => {
-                let comparison = self.eval_expression(local_context, comparison)?;
-                let is_true = match comparison {
-                    Value::I32(value) => value != 0,
-                    // Value::U32(value) => value != 0,
-                    Value::None => false,
-                };
-                if is_true {
-                    self.eval_expression(local_context, if_true)
-                } else {
-                    self.eval_expression(local_context, if_false)
-                }
-            }
             Expr::BinaryOp(op, left, right) => {
                 let left = self.eval_expression(local_context, left)?;
                 let right = self.eval_expression(local_context, right)?;
                 match op {
                     BinaryOp::Add => match (left, right) {
-                        (Value::I32(left_value), Value::I32(right_value)) => {
-                            Ok(Value::I32(left_value + right_value))
-                        }
+                        (
+                            Value::Scalar(Scalar::I32(left_value)),
+                            Value::Scalar(Scalar::I32(right_value)),
+                        ) => Ok(Value::Scalar(Scalar::I32(left_value + right_value))),
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value + right_value))
                         // }
                         (Value::None, _) => Err(anyhow!("Cannot add number to None")),
                         (_, Value::None) => Err(anyhow!("Cannot add number to None")),
-                        // _ => Err(anyhow!("Type mismatch")),
+                        _ => Err(anyhow!("Type mismatch")),
                     },
                     BinaryOp::Sub => match (left, right) {
-                        (Value::I32(left_value), Value::I32(right_value)) => {
-                            Ok(Value::I32(left_value - right_value))
-                        }
+                        (
+                            Value::Scalar(Scalar::I32(left_value)),
+                            Value::Scalar(Scalar::I32(right_value)),
+                        ) => Ok(Value::Scalar(Scalar::I32(left_value - right_value))),
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value - right_value))
                         // }
                         (Value::None, _) => Err(anyhow!("Cannot subtract number to None")),
                         (_, Value::None) => Err(anyhow!("Cannot subtract number to None")),
-                        // _ => Err(anyhow!("Type mismatch")),
+                        _ => Err(anyhow!("Type mismatch")),
                     },
                     BinaryOp::Mul => match (left, right) {
-                        (Value::I32(left_value), Value::I32(right_value)) => {
-                            Ok(Value::I32(left_value * right_value))
-                        }
+                        (
+                            Value::Scalar(Scalar::I32(left_value)),
+                            Value::Scalar(Scalar::I32(right_value)),
+                        ) => Ok(Value::Scalar(Scalar::I32(left_value * right_value))),
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value * right_value))
                         // }
                         (Value::None, _) => Err(anyhow!("Cannot multiply number to None")),
                         (_, Value::None) => Err(anyhow!("Cannot multiply number to None")),
-                        // _ => Err(anyhow!("Type mismatch")),
+                        _ => Err(anyhow!("Type mismatch")),
                     },
                     BinaryOp::Lt => match (left, right) {
-                        (Value::I32(left_value), Value::I32(right_value)) => {
-                            Ok(Value::I32(if left_value < right_value { 1 } else { 0 }))
-                        }
+                        (
+                            Value::Scalar(Scalar::I32(left_value)),
+                            Value::Scalar(Scalar::I32(right_value)),
+                        ) => Ok(Value::Scalar(Scalar::I32(
+                            (left_value < right_value).into(),
+                        ))),
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(if left_value < right_value { 1 } else { 0 }))
                         // }
                         (Value::None, _) => Err(anyhow!("Cannot compare to number to None")),
                         (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
-                        // _ => Err(anyhow!("Type mismatch")),
+                        _ => Err(anyhow!("Type mismatch")),
+                    },
+                    BinaryOp::Eq => match (left, right) {
+                        (
+                            Value::Scalar(Scalar::I32(left_value)),
+                            Value::Scalar(Scalar::I32(right_value)),
+                        ) => Ok(Value::Scalar(Scalar::I32(
+                            (left_value == right_value).into(),
+                        ))),
+                        // (Value::U32(left_value), Value::U32(right_value)) => {
+                        //     Ok(Value::U32(if left_value < right_value { 1 } else { 0 }))
+                        // }
+                        (Value::None, _) => Err(anyhow!("Cannot compare to number to None")),
+                        (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
+                        _ => Err(anyhow!("Type mismatch")),
                     },
                 }
             }
             Expr::UnaryOp { .. } => Ok(Value::None),
-            Expr::Call(name, args) => self.call_function(name, local_context, args),
+            Expr::Call(name, args) => self
+                .call_function(name, local_context, args)
+                .map(Returned::into_inner),
         }
     }
 
@@ -200,31 +249,54 @@ impl VM {
         name: &str,
         calling_context: &FunctionContext,
         args: &BTreeMap<String, Expr>,
-    ) -> anyhow::Result<Value> {
-        self.eval_function(
+    ) -> anyhow::Result<Returned> {
+        self.eval_instructions(
             calling_context,
-            self.state
+            &self
+                .state
                 .functions
                 .get(name)
-                .ok_or_else(|| anyhow!(r#"function "{:?}" not found!"#, name))?,
+                .ok_or_else(|| anyhow!(r#"function "{:?}" not found!"#, name))?
+                .0,
             args,
         )
     }
 
-    pub fn eval_function(
+    pub fn eval_instructions(
         &self,
         calling_context: &FunctionContext,
-        Function(fun): &Function,
+        instructions: &Vec<Instruction>,
         args: &BTreeMap<String, Expr>,
-    ) -> anyhow::Result<Value> {
+    ) -> anyhow::Result<Returned> {
         let mut local_context = FunctionContext::new();
         for (name, arg) in args {
             let value = self.eval_expression(&calling_context, &arg)?;
             local_context.arguments.insert(name.clone(), value);
         }
 
-        for line in fun {
-            match line {
+        for instruction in instructions {
+            match instruction {
+                Instruction::If(comparison, if_true, if_false) => {
+                    let comparison = self.eval_expression(&local_context, comparison)?;
+                    let is_true = match comparison {
+                        Value::Scalar(Scalar::I32(value)) => value != 0,
+                        _ => false,
+                    };
+                    let body = if is_true { if_true } else { if_false };
+
+                    let value = self.eval_instructions(
+                        &local_context,
+                        body,
+                        &local_context
+                            .arguments
+                            .iter()
+                            .map(|(name, expr)| (name.clone(), Expr::Value(expr.clone())))
+                            .collect(),
+                    )?;
+                    if let Returned::Early(value) = value {
+                        return Ok(Returned::Early(value));
+                    }
+                }
                 Instruction::ConstAssign(name, expr) => {
                     let value = self.eval_expression(&local_context, &expr)?;
                     local_context.constants.insert(name.clone(), value);
@@ -233,10 +305,78 @@ impl VM {
                     let value = self.eval_expression(&local_context, &expr)?;
                     local_context.variables.insert(name.clone(), value);
                 }
-                Instruction::Return(expr) => return self.eval_expression(&local_context, expr),
+                Instruction::Return(expr) => {
+                    return self
+                        .eval_expression(&local_context, expr)
+                        .map(Returned::Early)
+                }
+                Instruction::For(range, instructions) => {
+                    let mut args = args.clone();
+                    match range {
+                        Range::Range {
+                            start,
+                            stop,
+                            step,
+                            mode,
+                        } => {
+                            let start = self.eval_expression(&local_context, start)?;
+                            let stop = self.eval_expression(&local_context, stop)?;
+                            let step = self.eval_expression(&local_context, step)?;
+                            match (start, stop, step) {
+                                (
+                                    Value::Scalar(Scalar::I32(start)),
+                                    Value::Scalar(Scalar::I32(stop)),
+                                    Value::Scalar(Scalar::I32(step)),
+                                ) => {
+                                    for v in match &mode {
+                                        RangeMode::Inclusive => ((start as usize)..(stop as usize))
+                                            .step_by(step as usize),
+                                        RangeMode::Exclusive => ((start as usize)..(stop as usize))
+                                            .step_by(step as usize),
+                                    } {
+                                        args.insert(
+                                            s!("it"),
+                                            Expr::Value(Value::Scalar(Scalar::I32(v as i32))),
+                                        );
+                                        let value = self.eval_instructions(
+                                            &local_context,
+                                            instructions,
+                                            &args,
+                                        )?;
+                                        if let Returned::Early(_) = value {
+                                            return Ok(value);
+                                        }
+                                        if let Instruction::Return(_) = instruction {
+                                            return Ok(Returned::Early(value.into_inner()));
+                                        }
+                                    }
+                                }
+                                (Value::Vector(_), _, _) | (Value::None, _, _) => {
+                                    bail!(r#"Field "start" must be a vector!"#)
+                                }
+                                (_, Value::Vector(_), _) | (_, Value::None, _) => {
+                                    bail!(r#"Field "stop" must be a vector!"#)
+                                }
+                                (_, _, Value::Vector(_)) | (_, _, Value::None) => {
+                                    bail!(r#"Field "step" must be a vector!"#)
+                                }
+                            }
+                        }
+                        Range::Values(values) => {
+                            for v in values {
+                                args.insert(s!("it"), Expr::Value(v.clone()));
+                                let value =
+                                    self.eval_instructions(&local_context, instructions, &args)?;
+                                if let Returned::Early(_) = value {
+                                    return Ok(value);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        Ok(Value::None)
+        Ok(Returned::Finished(Value::None))
     }
 
     pub fn add_constant(&mut self, name: &str, value: Value) -> anyhow::Result<()> {

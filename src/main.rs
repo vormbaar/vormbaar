@@ -7,6 +7,7 @@ use anyhow::{anyhow, bail};
 use clap::*;
 use content_inspector::inspect;
 use serde_querystring::ParseMode;
+use stringlit::s;
 use vm::*;
 
 #[derive(Parser)]
@@ -30,7 +31,7 @@ enum Command {
         #[arg(long, default_value_t = String::from("main"))]
         entrypoint: String,
         /// The args to pass to the entrypoint. Defined as url querystring
-        #[arg(value_name = "ARGS", default_value_t = String::from("init=5"))]
+        #[arg(value_name = "ARGS", default_value_t = String::from("init=5&n=10"))]
         args: String,
     },
     /// Deserialize the vm and print the whole vm on stdout
@@ -66,55 +67,89 @@ fn deserialize_vm<P: AsRef<Path>>(path: P) -> anyhow::Result<VM> {
     inner(path.as_ref())
 }
 
+fn create_demo_code() -> anyhow::Result<VM> {
+    let mut vm = VM::new();
+    use crate::BinaryOp::*;
+    use crate::Scalar::*;
+    use crate::Value::*;
+    use Expr::*;
+    use Instruction::*;
+    vm.add_function(
+        "main",
+        Function::new(vec![For(
+            Range::Range {
+                start: Expr::Value(Scalar(I32(0))),
+                stop: Expr::Arg(s!("n")),
+                step: Expr::Value(Scalar(I32(1))),
+                mode: RangeMode::Exclusive,
+            },
+            [If(
+                BinaryOp(
+                    Eq,
+                    Arg(s!("it")).into(),
+                    BinaryOp(Sub, Arg(s!("n")).into(), Value(Scalar(I32(1))).into()).into(),
+                )
+                .into(),
+                [Return(Call(
+                    "factorial".into(),
+                    BTreeMap::from([("n".to_string(), Arg("init".into()))]),
+                ))]
+                .into(),
+                [VarAssign(
+                    s!("_"),
+                    Call(
+                        "factorial".into(),
+                        BTreeMap::from([("n".to_string(), Arg("init".into()))]),
+                    ),
+                )]
+                .into(),
+            )]
+            .into(),
+        )]),
+    )
+    .map_err(|err| anyhow!("{:?}", err))?;
+
+    vm.add_function(
+        "factorial",
+        Function::new(vec![Instruction::If(
+            BinaryOp(
+                Lt,
+                Arg("n".to_string()).into(),
+                Value(Scalar(I32(2))).into(),
+            )
+            .into(),
+            [Return(Value(Scalar(I32(1))))].into(),
+            [Return(BinaryOp(
+                Mul,
+                Arg("n".to_string()).into(),
+                Call(
+                    "factorial".to_string(),
+                    BTreeMap::from([(
+                        "n".to_string(),
+                        BinaryOp(
+                            Sub,
+                            Arg("n".to_string()).into(),
+                            Value(Scalar(I32(1))).into(),
+                        ),
+                    )]),
+                )
+                .into(),
+            ))]
+            .into(),
+        )
+        .into()]),
+    )
+    .map_err(|err| anyhow!("{:?}", err))?;
+    Ok(vm)
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Options::parse();
 
     let ron = ron::Options::default();
     match args.command {
         Command::Create { file } => {
-            let mut vm = VM::new();
-            use crate::BinaryOp::*;
-            use crate::Value::*;
-            use Expr::*;
-            use Instruction::*;
-            vm.add_function(
-                "main",
-                Function::new(vec![Return(Call(
-                    "factorial".into(),
-                    BTreeMap::from([("n".to_string(), Arg("init".into()))]),
-                ))]),
-            )
-            .map_err(|err| anyhow!("{:?}", err))?;
-
-            vm.add_function(
-                "factorial",
-                Function::new(vec![Return(
-                    Expr::If(
-                        BinaryOp(Lt, Arg("n".to_string()).into(), Value(I32(2)).into()).into(),
-                        Value(I32(1)).into(),
-                        BinaryOp(
-                            Mul,
-                            Arg("n".to_string()).into(),
-                            Call(
-                                "factorial".to_string(),
-                                BTreeMap::from([(
-                                    "n".to_string(),
-                                    BinaryOp(
-                                        Sub,
-                                        Arg("n".to_string()).into(),
-                                        Value(I32(1)).into(),
-                                    ),
-                                )]),
-                            )
-                            .into(),
-                        )
-                        .into(),
-                    )
-                    .into(),
-                )]),
-            )
-            .map_err(|err| anyhow!("{:?}", err))?;
-
+            let vm = create_demo_code()?;
             let state = ron
                 .to_string_pretty(&vm, ron::ser::PrettyConfig::new().struct_names(false))
                 .unwrap();
@@ -143,7 +178,7 @@ fn main() -> anyhow::Result<()> {
             let local_context = FunctionContext::new();
 
             let args =
-                serde_querystring::from_str::<BTreeMap<String, i32>>(&args, ParseMode::UrlEncoded)?;
+                serde_querystring::from_str::<BTreeMap<String, i32>>(&args, ParseMode::Brackets)?;
 
             // call function with argument
             let result = vm
@@ -152,13 +187,18 @@ fn main() -> anyhow::Result<()> {
                     &local_context,
                     &args
                         .iter()
-                        .map(|(name, &value)| (name.to_owned(), Expr::Value(Value::I32(value))))
+                        .map(|(name, &value)| {
+                            (
+                                name.to_owned(),
+                                Expr::Value(Value::Scalar(Scalar::I32(value))),
+                            )
+                        })
                         .collect(),
                 )
                 .map_err(|err| anyhow!("{:?}", err))?;
 
             // print result
-            println!("{:?}", result);
+            println!("{:?}", result.into_inner());
         }
         Command::Compile { file, out } => {
             if !file.exists() {
