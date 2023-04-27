@@ -1,3 +1,5 @@
+mod ui;
+
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -39,6 +41,10 @@ struct Options {
 
 #[derive(Subcommand)]
 enum Command {
+    Ui {
+        /// The file to load or create
+        file: PathBuf,
+    },
     /// Create an example ron file
     Create {
         /// The file to create
@@ -54,6 +60,13 @@ enum Command {
         /// The args to pass to the entrypoint. Defined as url querystring
         #[arg(value_name = "ARGS", default_value_t = String::from("init=5&n=10"))]
         args: String,
+    },
+    /// Show args of a function
+    Args {
+        /// Which file to load
+        file: PathBuf,
+        /// Which function to use as entrypoint
+        function: String,
     },
     /// Deserialize the vm and print the whole vm on stdout
     Debug {
@@ -107,7 +120,7 @@ fn create_demo_code() -> anyhow::Result<VM> {
             [If(
                 BinaryOp(
                     Eq,
-                    Arg(s!("it")).into(),
+                    Var(s!("it")).into(),
                     BinaryOp(Sub, Arg(s!("n")).into(), Value(Scalar(I32(1))).into()).into(),
                 )
                 .into(),
@@ -161,6 +174,15 @@ fn create_demo_code() -> anyhow::Result<VM> {
     Ok(vm)
 }
 
+fn save_vm<P: AsRef<Path>>(path: P, vm: &VM) -> anyhow::Result<()> {
+    let ron = ron::Options::default();
+    let state = ron
+        .to_string_pretty(&vm, ron::ser::PrettyConfig::new().struct_names(false))
+        .unwrap();
+    std::fs::write(path.as_ref(), state).unwrap();
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Options::parse();
 
@@ -172,14 +194,19 @@ fn main() -> anyhow::Result<()> {
         setup_global_subscriber(&"tracing.folded");
     }
 
-    let ron = ron::Options::default();
     match args.command {
+        Command::Ui { file } => {
+            let vm = if file.exists() {
+                deserialize_vm(&file)?
+            } else {
+                create_demo_code()?
+            };
+            save_vm(&file, &vm)?;
+
+            ui::start_ui(file, vm)?;
+        }
         Command::Create { file } => {
-            let vm = create_demo_code()?;
-            let state = ron
-                .to_string_pretty(&vm, ron::ser::PrettyConfig::new().struct_names(false))
-                .unwrap();
-            std::fs::write(file, state).unwrap();
+            save_vm(&file, &create_demo_code()?)?;
         }
         Command::Debug { file } => {
             if !file.exists() {
@@ -189,6 +216,18 @@ fn main() -> anyhow::Result<()> {
             let vm = deserialize_vm(file)?;
 
             println!("{:#?}", vm);
+        }
+        Command::Args { file, function } => {
+            if !file.exists() {
+                bail!("File doesn't exist!");
+            }
+
+            let vm = deserialize_vm(file)?;
+            if let Some(args) = vm.get_function(&function).map(Function::get_arguments) {
+                println!("Found args: {:?}", args);
+            } else {
+                println!("No aruguments found!");
+            }
         }
         Command::Run {
             file,
@@ -242,11 +281,7 @@ fn main() -> anyhow::Result<()> {
             }
             let state_text = std::fs::read_to_string(&file).unwrap();
             let vm: VM = ron::from_str(&state_text).unwrap();
-
-            let state = ron
-                .to_string_pretty(&vm, ron::ser::PrettyConfig::new().struct_names(false))
-                .unwrap();
-            std::fs::write(file, state).unwrap();
+            save_vm(&file, &vm)?;
         }
     }
 

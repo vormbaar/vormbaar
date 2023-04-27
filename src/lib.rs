@@ -58,6 +58,34 @@ pub enum Expr {
     Call(String, BTreeMap<String, Expr>),
 }
 
+impl Expr {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
+    pub fn get_arguments(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        match self {
+            Expr::Value(_) => (),
+            Expr::Const(_) => (),
+            Expr::Var(_) => (),
+            Expr::Arg(name) => args.push(name.to_owned()),
+            Expr::BinaryOp(_, left, right) => {
+                args.extend(left.get_arguments().into_iter());
+                args.extend(right.get_arguments().into_iter());
+            }
+            Expr::UnaryOp(_, expr) => {
+                args.extend(expr.get_arguments().into_iter());
+            }
+            Expr::Call(_, arguments) => {
+                for (_, value) in arguments {
+                    args.extend(value.get_arguments().into_iter());
+                }
+            }
+        };
+        args.sort();
+        args.dedup();
+        args
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Instruction {
     If(Box<Expr>, Vec<Instruction>, Vec<Instruction>),
@@ -66,6 +94,45 @@ pub enum Instruction {
     VarAssign(String, Expr),
     Drop(Expr),
     Return(Expr),
+}
+
+impl Instruction {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
+    pub fn get_arguments(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        match self {
+            Instruction::If(expr, if_true, if_false) => {
+                args.extend(expr.get_arguments());
+                args.extend(
+                    if_true
+                        .into_iter()
+                        .map(Instruction::get_arguments)
+                        .flatten(),
+                );
+                args.extend(
+                    if_false
+                        .into_iter()
+                        .map(Instruction::get_arguments)
+                        .flatten(),
+                );
+            }
+            Instruction::ConstAssign(_, expr) => args.extend(expr.get_arguments()),
+            Instruction::For(expr, body) => {
+                args.extend(expr.get_arguments());
+                args.extend(body.into_iter().map(Instruction::get_arguments).flatten());
+            }
+            Instruction::VarAssign(_, expr) => {
+                args.extend(expr.get_arguments());
+            }
+            Instruction::Drop(expr) => {
+                args.extend(expr.get_arguments());
+            }
+            Instruction::Return(expr) => args.extend(expr.get_arguments()),
+        }
+        args.sort();
+        args.dedup();
+        args
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -85,6 +152,25 @@ pub enum Range {
     },
 }
 
+impl Range {
+    pub fn get_arguments(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        match self {
+            Range::Values(_) => (),
+            Range::Range {
+                start, stop, step, ..
+            } => {
+                args.extend(start.get_arguments().into_iter());
+                args.extend(stop.get_arguments().into_iter());
+                args.extend(step.get_arguments().into_iter());
+            }
+        }
+        args.sort();
+        args.dedup();
+        args
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Function(Vec<Instruction>);
 
@@ -92,6 +178,19 @@ impl Function {
     #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn new(body: Vec<Instruction>) -> Self {
         Self(body)
+    }
+
+    #[cfg_attr(feature = "flame", tracing::instrument)]
+    pub fn get_arguments(&self) -> Vec<String> {
+        let Function(body) = self;
+        let mut args = body
+            .iter()
+            .map(|i| i.get_arguments())
+            .flatten()
+            .collect::<Vec<_>>();
+        args.sort();
+        args.dedup();
+        args
     }
 }
 
@@ -344,10 +443,9 @@ impl VM {
                                         RangeMode::Exclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
                                     } {
-                                        args.insert(
-                                            s!("it"),
-                                            Expr::Value(Value::Scalar(Scalar::I32(v as i32))),
-                                        );
+                                        local_context
+                                            .variables
+                                            .insert(s!("it"), Value::Scalar(Scalar::I32(v as i32)));
                                         let value = self.eval_instructions(
                                             &local_context,
                                             instructions,
@@ -405,5 +503,10 @@ impl VM {
         }
         _ = self.state.functions.insert(name.to_owned(), func);
         Ok(())
+    }
+
+    #[cfg_attr(feature = "flame", tracing::instrument)]
+    pub fn get_function(&self, name: &str) -> Option<&Function> {
+        self.state.functions.get(name)
     }
 }
