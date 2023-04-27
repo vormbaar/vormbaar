@@ -23,7 +23,7 @@
                             "n": Arg("init"),
                         })),
                     ], [
-                        VarAssign("_", Call("factorial", {
+                        Drop(Call("factorial", {
                             "n": Arg("init"),
                         })),
                     ]),

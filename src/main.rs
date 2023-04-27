@@ -10,8 +10,29 @@ use serde_querystring::ParseMode;
 use stringlit::s;
 use vm::*;
 
+#[cfg(feature = "flame")]
+use tracing_flame::FlameLayer;
+#[cfg(feature = "flame")]
+use tracing_subscriber::{fmt, prelude::*};
+
+#[cfg(feature = "flame")]
+fn setup_global_subscriber(file: &str) -> impl Drop {
+    let fmt_layer = fmt::Layer::default();
+
+    let (flame_layer, _guard) = FlameLayer::with_file(file).unwrap();
+
+    tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(flame_layer)
+        .init();
+    _guard
+}
+
 #[derive(Parser)]
 struct Options {
+    #[cfg(feature = "flame")]
+    #[arg(short, long)]
+    flame: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -95,13 +116,10 @@ fn create_demo_code() -> anyhow::Result<VM> {
                     BTreeMap::from([("n".to_string(), Arg("init".into()))]),
                 ))]
                 .into(),
-                [VarAssign(
-                    s!("_"),
-                    Call(
-                        "factorial".into(),
-                        BTreeMap::from([("n".to_string(), Arg("init".into()))]),
-                    ),
-                )]
+                [Drop(Call(
+                    "factorial".into(),
+                    BTreeMap::from([("n".to_string(), Arg("init".into()))]),
+                ))]
                 .into(),
             )]
             .into(),
@@ -145,6 +163,14 @@ fn create_demo_code() -> anyhow::Result<VM> {
 
 fn main() -> anyhow::Result<()> {
     let args = Options::parse();
+
+    #[cfg(feature = "flame")]
+    if args.flame {
+        println!(
+            "Running with tracing enabled. Generating file 'tracing.folded' for use with inferno."
+        );
+        setup_global_subscriber(&"tracing.folded");
+    }
 
     let ron = ron::Options::default();
     match args.command {

@@ -14,7 +14,7 @@ that smalltalk and lisp have, with their image based approach, but with enough f
 on such topics.
 
 I also thought about syntax quite a bit and decided to try a completely different approach. I want to merge
-the REPL/image-based approach from lisp, with structural/projectional editing.
+the REPL/image-based approach from lisp, with [structural/projectional editing](https://en.wikipedia.org/wiki/Structure_editor).
 
 For that I want to define the basic structures of a program just in code and build a UI
 to edit this structure directly.
@@ -54,3 +54,18 @@ Commands:
 Options:
   -h, --help  Print help
 ```
+
+## How fast is it?
+
+Pretty fast actually. The first benchmark (done with commit 4a87d9fdc3ae6f5cd310460c453af09eb13e7178) shows,
+we are already in a similar ballpark as python, for a simple benchmark.
+
+I'll probably not benchmark too much now, as there are more important features right now. If someone knows how to
+improve performance without restricting whats possible too much, feel free to submit a PR.
+
+The benchmark result can be found at [bench/README.md](./bench/README.md).
+
+The python code that I used for the benchmark can be found at [bench/py/fac.py](./bench/py/fac.py).
+
+Here is also a small flamegraph:
+![flamegraph](./flamegraph.png)

@@ -27,6 +27,7 @@ pub enum Returned {
 }
 
 impl Returned {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn into_inner(self) -> Value {
         match self {
             Returned::Early(value) | Returned::Finished(value) => value,
@@ -63,6 +64,7 @@ pub enum Instruction {
     ConstAssign(String, Expr),
     For(Range, Vec<Instruction>),
     VarAssign(String, Expr),
+    Drop(Expr),
     Return(Expr),
 }
 
@@ -87,6 +89,7 @@ pub enum Range {
 pub struct Function(Vec<Instruction>);
 
 impl Function {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn new(body: Vec<Instruction>) -> Self {
         Self(body)
     }
@@ -101,6 +104,7 @@ pub struct State {
 }
 
 impl State {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn new() -> Self {
         Self {
             constants: BTreeMap::new(),
@@ -120,6 +124,7 @@ pub struct FunctionContext {
 }
 
 impl FunctionContext {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn new() -> Self {
         Self {
             arguments: BTreeMap::new(),
@@ -136,6 +141,7 @@ pub struct VM {
 }
 
 impl VM {
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn new() -> Self {
         Self {
             state: State {
@@ -145,6 +151,7 @@ impl VM {
         }
     }
 
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn eval_expression(
         &self,
         local_context: &FunctionContext,
@@ -244,6 +251,7 @@ impl VM {
         }
     }
 
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn call_function(
         &self,
         name: &str,
@@ -262,6 +270,7 @@ impl VM {
         )
     }
 
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn eval_instructions(
         &self,
         calling_context: &FunctionContext,
@@ -305,6 +314,7 @@ impl VM {
                     let value = self.eval_expression(&local_context, &expr)?;
                     local_context.variables.insert(name.clone(), value);
                 }
+                Instruction::Drop(_) => {}
                 Instruction::Return(expr) => {
                     return self
                         .eval_expression(&local_context, expr)
@@ -379,6 +389,7 @@ impl VM {
         Ok(Returned::Finished(Value::None))
     }
 
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn add_constant(&mut self, name: &str, value: Value) -> anyhow::Result<()> {
         if self.state.constants.contains_key(name) {
             bail!(r#"constant "{:?}" already exists"#, name);
@@ -387,6 +398,7 @@ impl VM {
         Ok(())
     }
 
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn add_function(&mut self, name: &str, func: Function) -> anyhow::Result<()> {
         if self.state.functions.contains_key(name) {
             bail!(r#"function "{:?}" already exists"#, name);

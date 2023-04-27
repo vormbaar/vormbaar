@@ -1,0 +1,31 @@
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--", "--emit=files"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.release]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+dependencies = ["clean"]
+
+[tasks.bench]
+dependencies = ["release"]
+install_crate = { crate_name = "hyperfine", binary = "hyperfine", test_arg = "--help" }
+command = "hyperfine"
+args = [
+  "-w", "5",
+  "./target/release/vm run factorial.ron \"init=5&n=450000\"",
+  "python bench/py/fac.py",
+  "--setup",
+  "./target/release/vm create factorial.ron",
+  "--output", "null",
+  "--export-markdown", "bench/README.md"
+]
