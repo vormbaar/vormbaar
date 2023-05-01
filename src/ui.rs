@@ -9,12 +9,12 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use unicode_width::UnicodeWidthStr;
 
-use vm::{Expr, FunctionContext, Value, VM};
+use vorm::{Expr, FunctionContext, Value, VM};
 
 enum InputMode {
     Normal,
@@ -36,7 +36,7 @@ impl Default for App {
     fn default() -> App {
         App {
             input: String::from("factorial n=5"),
-            input_mode: InputMode::Normal,
+            input_mode: InputMode::Editing,
             messages: Vec::new(),
             vm: VM::new(),
         }
@@ -93,53 +93,68 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                     KeyCode::Enter => {
                         let message: String = app.input.drain(..).collect();
                         match message.trim() {
-                            "exit" | "quit" | "q" => return Ok(()),
+                            "exit" | "quit" | ":q" | "q" => return Ok(()),
                             _ => (),
                         }
                         let mut fcall = message.split(" ");
                         let calling_context = FunctionContext::new();
                         if let Some(name) = fcall.next() {
-                            if name.starts_with("?") {
-                                let name = &name[1..];
-                                let func = if name.is_empty() {
-                                    if let Some(name) = fcall.next() {
+                            match name.as_ref() {
+                                ":args" => {
+                                    let func = if let Some(name) = fcall.next() {
                                         Some((name, app.vm.get_function(name)))
                                     } else {
                                         None
-                                    }
-                                } else {
-                                    Some((name, app.vm.get_function(name)))
-                                };
-                                let msg = match func {
-                                    Some((name, Some(func))) => {
-                                        format!("fn {}({:?})", name, func.get_arguments())
-                                    }
-                                    Some((name, None)) => {
-                                        format!("Could not find function {}!", name)
-                                    }
-                                    None => format!("No function name specified!"),
-                                };
-                                app.messages.push(format!("{}", msg));
-                            } else {
-                                let result = app.vm.call_function(
-                                    name,
-                                    &calling_context,
-                                    &fcall
-                                        .flat_map(|s| {
-                                            if let Some((name, value)) = s.split_once("=") {
-                                                Some((
-                                                    name.to_string(),
-                                                    Expr::Value(
-                                                        ron::from_str::<Value>(value).unwrap(),
-                                                    ),
-                                                ))
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect(),
-                                );
-                                app.messages.push(format!("{:?}", result));
+                                    };
+                                    let msg = match func {
+                                        Some((name, Some(func))) => {
+                                            format!("fn {}({:?})", name, func.get_arguments())
+                                        }
+                                        Some((name, None)) => {
+                                            format!("Could not find function {}!", name)
+                                        }
+                                        None => format!("No function name specified!"),
+                                    };
+                                    app.messages.push(format!("{}", msg));
+                                }
+                                ":code" => {
+                                    let func = if let Some(name) = fcall.next() {
+                                        Some((name, app.vm.get_function(name)))
+                                    } else {
+                                        None
+                                    };
+                                    let msg = match func {
+                                        Some((name, Some(func))) => {
+                                            format!("fn {}:\n{:?})", name, func)
+                                        }
+                                        Some((name, None)) => {
+                                            format!("Could not find function {}!", name)
+                                        }
+                                        None => format!("No function name specified!"),
+                                    };
+                                    app.messages.push(format!("{}", msg));
+                                }
+                                _ => {
+                                    let result = app.vm.call_function(
+                                        name,
+                                        &calling_context,
+                                        &fcall
+                                            .flat_map(|s| {
+                                                if let Some((name, value)) = s.split_once("=") {
+                                                    Some((
+                                                        name.to_string(),
+                                                        Expr::Value(
+                                                            ron::from_str::<Value>(value).unwrap(),
+                                                        ),
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect(),
+                                    );
+                                    app.messages.push(format!("{:?}", result));
+                                }
                             }
                         }
                     }
@@ -190,7 +205,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
                 Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to stop editing, "),
                 Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to call the function. Example: factorial n=5"),
+                Span::raw(
+                    r#" to call the function. Example: "factorial n=5" or ":args factorial"."#,
+                ),
             ],
             Style::default(),
         ),
@@ -223,16 +240,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         }
     }
 
-    let messages: Vec<ListItem> = app
-        .messages
-        .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            let content = vec![Spans::from(Span::raw(format!("{}: {}", i, m)))];
-            ListItem::new(content)
-        })
-        .collect();
-    let messages =
-        List::new(messages).block(Block::default().borders(Borders::ALL).title("Messages"));
-    f.render_widget(messages, chunks[2]);
+    let mut text = Text::from(Spans::from(app.messages.join("\n")));
+    text.patch_style(style);
+    let result_message = Paragraph::new(text).wrap(Wrap { trim: true });
+    f.render_widget(result_message, chunks[2]);
 }

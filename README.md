@@ -1,5 +1,5 @@
-# VM
-Custom VM project. Should evolve into a full programming envirnoment some day.
+# **V**or**M**baar
+Custom VM project. Should evolve into a full programming environment some day.
 
 # DO NOT USE ANYWHERE NEAR PRODUCTION
 
@@ -41,7 +41,7 @@ Scalar(I32(120))
 
 ## Usage
 ```
-Usage: vm <COMMAND>
+Usage: vorm <COMMAND>
 
 Commands:
   create   Create an example ron file
@@ -69,3 +69,7 @@ The python code that I used for the benchmark can be found at [bench/py/fac.py](
 
 Here is also a small flamegraph:
 ![flamegraph](./flamegraph.png)
+
+## Whats up with the name?
+`Vormbaar` means moldable in dutch, which captures the spirit of the project. It also contains the letters `v` and `m`,
+which stand for the VM-like nature of this project.

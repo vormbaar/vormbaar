@@ -363,7 +363,7 @@ impl VM {
                 .state
                 .functions
                 .get(name)
-                .ok_or_else(|| anyhow!(r#"function "{:?}" not found!"#, name))?
+                .ok_or_else(|| anyhow!(r#"function "{}" not found!"#, name))?
                 .0,
             args,
         )
@@ -490,7 +490,7 @@ impl VM {
     #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn add_constant(&mut self, name: &str, value: Value) -> anyhow::Result<()> {
         if self.state.constants.contains_key(name) {
-            bail!(r#"constant "{:?}" already exists"#, name);
+            bail!(r#"constant "{}" already exists"#, name);
         }
         _ = self.state.constants.insert(name.to_owned(), value);
         Ok(())
@@ -499,7 +499,7 @@ impl VM {
     #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn add_function(&mut self, name: &str, func: Function) -> anyhow::Result<()> {
         if self.state.functions.contains_key(name) {
-            bail!(r#"function "{:?}" already exists"#, name);
+            bail!(r#"function "{}" already exists"#, name);
         }
         _ = self.state.functions.insert(name.to_owned(), func);
         Ok(())

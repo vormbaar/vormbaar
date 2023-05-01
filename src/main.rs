@@ -10,7 +10,7 @@ use clap::*;
 use content_inspector::inspect;
 use serde_querystring::ParseMode;
 use stringlit::s;
-use vm::*;
+use vorm::*;
 
 #[cfg(feature = "flame")]
 use tracing_flame::FlameLayer;
