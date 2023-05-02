@@ -1,4 +1,4 @@
-# **V**or**M**baar
+# Vormbaar
 Custom VM project. Should evolve into a full programming environment some day.
 
 # DO NOT USE ANYWHERE NEAR PRODUCTION (yet)
@@ -71,5 +71,4 @@ Here is also a small flamegraph:
 ![flamegraph](./flamegraph.png)
 
 ## Whats up with the name?
-`Vormbaar` means moldable in dutch, which captures the spirit of the project. It also contains the letters `v` and `m`,
-which stand for the VM-like nature of this project.
+`Vormbaar` means moldable in dutch, which captures the spirit of the project.
