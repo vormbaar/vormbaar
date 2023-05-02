@@ -1,7 +1,7 @@
 # **V**or**M**baar
 Custom VM project. Should evolve into a full programming environment some day.
 
-# DO NOT USE ANYWHERE NEAR PRODUCTION
+# DO NOT USE ANYWHERE NEAR PRODUCTION (yet)
 
 ## The Idea
 After watching [this Talk](https://www.youtube.com/watch?v=8Ab3ArE8W3s),
