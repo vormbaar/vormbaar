@@ -13,6 +13,7 @@
             ]),
             "main": ([
                 For(Range(
+                    item: "it",
                     start: Value(0),
                     stop: Arg("n"),
                     step: Value(1),

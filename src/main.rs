@@ -112,6 +112,7 @@ fn create_demo_code() -> anyhow::Result<VM> {
         "main",
         Function::new(vec![For(
             Range::Range {
+                item: s!("it"),
                 start: Expr::Value(Scalar(I32(0))),
                 stop: Expr::Arg(s!("n")),
                 step: Expr::Value(Scalar(I32(1))),

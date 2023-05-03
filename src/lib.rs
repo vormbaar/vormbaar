@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use stringlit::s;
 
 // todo: remove this one day
 // maybe replace with thiserror
@@ -143,8 +142,12 @@ pub enum RangeMode {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Range {
-    Values(Vec<Value>),
+    Values {
+        item: String,
+        values: Vec<Value>,
+    },
     Range {
+        item: String,
         start: Expr,
         stop: Expr,
         step: Expr,
@@ -156,7 +159,7 @@ impl Range {
     pub fn get_arguments(&self) -> Vec<String> {
         let mut args = Vec::new();
         match self {
-            Range::Values(_) => (),
+            Range::Values { .. } => (),
             Range::Range {
                 start, stop, step, ..
             } => {
@@ -267,7 +270,7 @@ impl VM {
             },
             Expr::Var(name) => match local_context.variables.get(name) {
                 Some(value) => Ok(value.clone()),
-                None => Err(anyhow!("Cannot find variable named {:?}", name)),
+                None => Err(anyhow!("Cannot find variable named {:?}", name,)),
             },
             Expr::Arg(name) => match local_context.arguments.get(name) {
                 Some(value) => Ok(value.clone()),
@@ -376,7 +379,7 @@ impl VM {
         instructions: &Vec<Instruction>,
         args: &BTreeMap<String, Expr>,
     ) -> anyhow::Result<Returned> {
-        let mut local_context = FunctionContext::new();
+        let mut local_context = calling_context.clone();
         for (name, arg) in args {
             let value = self.eval_expression(&calling_context, &arg)?;
             local_context.arguments.insert(name.clone(), value);
@@ -420,17 +423,18 @@ impl VM {
                         .map(Returned::Early)
                 }
                 Instruction::For(range, instructions) => {
-                    let mut args = args.clone();
+                    let mut loop_context = local_context.clone();
                     match range {
                         Range::Range {
+                            item,
                             start,
                             stop,
                             step,
                             mode,
                         } => {
-                            let start = self.eval_expression(&local_context, start)?;
-                            let stop = self.eval_expression(&local_context, stop)?;
-                            let step = self.eval_expression(&local_context, step)?;
+                            let start = self.eval_expression(&loop_context, start)?;
+                            let stop = self.eval_expression(&loop_context, stop)?;
+                            let step = self.eval_expression(&loop_context, step)?;
                             match (start, stop, step) {
                                 (
                                     Value::Scalar(Scalar::I32(start)),
@@ -443,11 +447,12 @@ impl VM {
                                         RangeMode::Exclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
                                     } {
-                                        local_context
-                                            .variables
-                                            .insert(s!("it"), Value::Scalar(Scalar::I32(v as i32)));
+                                        loop_context.variables.insert(
+                                            item.clone(),
+                                            Value::Scalar(Scalar::I32(v as i32)),
+                                        );
                                         let value = self.eval_instructions(
-                                            &local_context,
+                                            &loop_context,
                                             instructions,
                                             &args,
                                         )?;
@@ -470,11 +475,11 @@ impl VM {
                                 }
                             }
                         }
-                        Range::Values(values) => {
+                        Range::Values { item, values } => {
                             for v in values {
-                                args.insert(s!("it"), Expr::Value(v.clone()));
+                                loop_context.variables.insert(item.clone(), v.clone());
                                 let value =
-                                    self.eval_instructions(&local_context, instructions, &args)?;
+                                    self.eval_instructions(&loop_context, instructions, &args)?;
                                 if let Returned::Early(_) = value {
                                     return Ok(value);
                                 }
