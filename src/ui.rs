@@ -11,31 +11,24 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
-use unicode_width::UnicodeWidthStr;
 
+#[allow(unused_imports)]
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
 use vorm::{Expr, FunctionContext, Value, VM};
 
 enum Mode {
-    Normal,
+    // Normal,
     Insert,
 }
 
 impl Mode {
-    fn help_message(&self) -> &'static str {
-        match self {
-            Self::Normal => "type q to quit, type i to enter insert mode",
-            Self::Insert => "type Esc to back to normal mode",
-        }
-    }
-
     fn cursor_color(&self) -> Color {
         match self {
-            Self::Normal => Color::Reset,
+            // Self::Normal => Color::Reset,
             Self::Insert => Color::LightBlue,
         }
     }
@@ -44,7 +37,7 @@ impl Mode {
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
-            Self::Normal => write!(f, "NORMAL"),
+            // Self::Normal => write!(f, "NORMAL"),
             Self::Insert => write!(f, "INSERT"),
         }
     }
@@ -52,8 +45,6 @@ impl fmt::Display for Mode {
 
 /// App holds the state of the application
 struct App<'a> {
-    /// Current value of the input box
-    input: String,
     /// Current input mode
     mode: Mode,
     textinput: TextArea<'a>,
@@ -64,7 +55,6 @@ struct App<'a> {
 impl<'a> Default for App<'a> {
     fn default() -> App<'a> {
         App {
-            input: String::from("factorial n=5"),
             mode: Mode::Insert,
             textinput: TextArea::default(),
             textoutput: TextArea::default(),
@@ -106,175 +96,175 @@ pub fn start_ui(_path: PathBuf, vm: VM) -> anyhow::Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
         let input = crossterm::event::read()?.into();
         match app.mode {
-            Mode::Normal => match input {
-                // Mappings in normal mode
-                Input {
-                    key: Key::Char('h'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::Back),
-                Input {
-                    key: Key::Char('j'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::Down),
-                Input {
-                    key: Key::Char('k'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::Up),
-                Input {
-                    key: Key::Char('l'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::Forward),
-                Input {
-                    key: Key::Char('w'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::WordForward),
-                Input {
-                    key: Key::Char('b'),
-                    ctrl: false,
-                    ..
-                } => app.textinput.move_cursor(CursorMove::WordBack),
-                Input {
-                    key: Key::Char('^'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::Head),
-                Input {
-                    key: Key::Char('$'),
-                    ..
-                } => app.textinput.move_cursor(CursorMove::End),
-                Input {
-                    key: Key::Char('D'),
-                    ..
-                } => {
-                    app.textinput.delete_line_by_end();
-                }
-                Input {
-                    key: Key::Char('C'),
-                    ..
-                } => {
-                    app.textinput.delete_line_by_end();
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('p'),
-                    ..
-                } => {
-                    app.textinput.paste();
-                }
-                Input {
-                    key: Key::Char('u'),
-                    ctrl: false,
-                    ..
-                } => {
-                    app.textinput.undo();
-                }
-                Input {
-                    key: Key::Char('r'),
-                    ctrl: true,
-                    ..
-                } => {
-                    app.textinput.redo();
-                }
-                Input {
-                    key: Key::Char('x'),
-                    ..
-                } => {
-                    app.textinput.delete_next_char();
-                }
-                Input {
-                    key: Key::Char('i'),
-                    ..
-                } => app.mode = Mode::Insert,
-                Input {
-                    key: Key::Char('a'),
-                    ..
-                } => {
-                    app.textinput.move_cursor(CursorMove::Forward);
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('A'),
-                    ..
-                } => {
-                    app.textinput.move_cursor(CursorMove::End);
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('o'),
-                    ..
-                } => {
-                    app.textinput.move_cursor(CursorMove::End);
-                    app.textinput.insert_newline();
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('O'),
-                    ..
-                } => {
-                    app.textinput.move_cursor(CursorMove::Head);
-                    app.textinput.insert_newline();
-                    app.textinput.move_cursor(CursorMove::Up);
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('I'),
-                    ..
-                } => {
-                    app.textinput.move_cursor(CursorMove::Head);
-                    app.mode = Mode::Insert;
-                }
-                Input {
-                    key: Key::Char('q'),
-                    ..
-                } => return Ok(()),
-                Input {
-                    key: Key::Char('e'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll((1, 0)),
-                Input {
-                    key: Key::Char('y'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll((-1, 0)),
-                Input {
-                    key: Key::Char('d'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll(Scrolling::HalfPageDown),
-                Input {
-                    key: Key::Char('u'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll(Scrolling::HalfPageUp),
-                Input {
-                    key: Key::Char('f'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll(Scrolling::PageDown),
-                Input {
-                    key: Key::Char('b'),
-                    ctrl: true,
-                    ..
-                } => app.textinput.scroll(Scrolling::PageUp),
-                _ => {}
-            },
+            // Mode::Normal => match input {
+            //     // Mappings in normal mode
+            //     Input {
+            //         key: Key::Char('h'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Back),
+            //     Input {
+            //         key: Key::Char('j'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Down),
+            //     Input {
+            //         key: Key::Char('k'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Up),
+            //     Input {
+            //         key: Key::Char('l'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Forward),
+            //     Input {
+            //         key: Key::Char('w'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::WordForward),
+            //     Input {
+            //         key: Key::Char('b'),
+            //         ctrl: false,
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::WordBack),
+            //     Input {
+            //         key: Key::Char('^'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Head),
+            //     Input {
+            //         key: Key::Char('$'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::End),
+            //     Input {
+            //         key: Key::Char('D'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_line_by_end();
+            //     }
+            //     Input {
+            //         key: Key::Char('C'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_line_by_end();
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('p'),
+            //         ..
+            //     } => {
+            //         app.textinput.paste();
+            //     }
+            //     Input {
+            //         key: Key::Char('u'),
+            //         ctrl: false,
+            //         ..
+            //     } => {
+            //         app.textinput.undo();
+            //     }
+            //     Input {
+            //         key: Key::Char('r'),
+            //         ctrl: true,
+            //         ..
+            //     } => {
+            //         app.textinput.redo();
+            //     }
+            //     Input {
+            //         key: Key::Char('x'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_next_char();
+            //     }
+            //     Input {
+            //         key: Key::Char('i'),
+            //         ..
+            //     } => app.mode = Mode::Insert,
+            //     Input {
+            //         key: Key::Char('a'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Forward);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('A'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::End);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('o'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::End);
+            //         app.textinput.insert_newline();
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('O'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Head);
+            //         app.textinput.insert_newline();
+            //         app.textinput.move_cursor(CursorMove::Up);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('I'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Head);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('q'),
+            //         ..
+            //     } => return Ok(()),
+            //     Input {
+            //         key: Key::Char('e'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll((1, 0)),
+            //     Input {
+            //         key: Key::Char('y'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll((-1, 0)),
+            //     Input {
+            //         key: Key::Char('d'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::HalfPageDown),
+            //     Input {
+            //         key: Key::Char('u'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::HalfPageUp),
+            //     Input {
+            //         key: Key::Char('f'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::PageDown),
+            //     Input {
+            //         key: Key::Char('b'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::PageUp),
+            //     _ => {}
+            // },
             Mode::Insert => match input {
-                Input { key: Key::Esc, .. }
-                | Input {
-                    key: Key::Char('c'),
-                    ctrl: true,
-                    ..
-                } => {
-                    app.mode = Mode::Normal; // Back to normal mode with Esc or Ctrl+C
-                }
+                // Input { key: Key::Esc, .. }
+                // | Input {
+                //     key: Key::Char('c'),
+                //     ctrl: true,
+                //     ..
+                // } => {
+                //     app.mode = Mode::Normal; // Back to normal mode with Esc or Ctrl+C
+                // }
                 Input {
                     key: Key::Enter, ..
                 } => {
-                    let message: String = app.input.drain(..).collect();
+                    let message: String = app.textinput.lines().join("\n");
                     match message.trim() {
                         "exit" | "quit" | ":q" | "q" => return Ok(()),
                         _ => (),
@@ -347,13 +337,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                 input => {
                     app.textinput.input(input); // Use default key mappings in insert mode
                 }
-                _ => {}
             },
         }
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -368,16 +357,16 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .split(f.size());
 
     let (msg, style) = match app.mode {
-        Mode::Normal => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to start editing."),
-            ],
-            Style::default().add_modifier(Modifier::RAPID_BLINK),
-        ),
+        // Mode::Normal => (
+        //     vec![
+        //         Span::raw("Press "),
+        //         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        //         Span::raw(" to exit, "),
+        //         Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+        //         Span::raw(" to start editing."),
+        //     ],
+        //     Style::default().add_modifier(Modifier::RAPID_BLINK),
+        // ),
         Mode::Insert => (
             vec![
                 Span::raw("Press "),
@@ -403,21 +392,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     app.textinput
         .set_block(Block::default().borders(Borders::ALL).title("Input"));
     f.render_widget(app.textinput.widget(), chunks[1]);
-    match app.mode {
-        Mode::Normal =>
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            {}
-
-        Mode::Insert => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                chunks[1].x + app.input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                chunks[1].y + 1,
-            )
-        }
-    }
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         "Messages",
         Style::default()
