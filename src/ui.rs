@@ -1,5 +1,7 @@
+use std::fmt;
+
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -9,35 +11,53 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
-use unicode_width::UnicodeWidthStr;
+
+#[allow(unused_imports)]
+use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
 use vorm::{Expr, FunctionContext, Value, VM};
 
-enum InputMode {
-    Normal,
-    Editing,
+enum Mode {
+    // Normal,
+    Insert,
+}
+
+impl Mode {
+    fn cursor_color(&self) -> Color {
+        match self {
+            // Self::Normal => Color::Reset,
+            Self::Insert => Color::LightBlue,
+        }
+    }
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            // Self::Normal => write!(f, "NORMAL"),
+            Self::Insert => write!(f, "INSERT"),
+        }
+    }
 }
 
 /// App holds the state of the application
-struct App {
-    /// Current value of the input box
-    input: String,
+struct App<'a> {
     /// Current input mode
-    input_mode: InputMode,
-    /// History of recorded messages
-    messages: Vec<String>,
+    mode: Mode,
+    textinput: TextArea<'a>,
+    textoutput: TextArea<'a>,
     vm: VM,
 }
 
-impl Default for App {
-    fn default() -> App {
+impl<'a> Default for App<'a> {
+    fn default() -> App<'a> {
         App {
-            input: String::from("factorial n=5"),
-            input_mode: InputMode::Editing,
-            messages: Vec::new(),
+            mode: Mode::Insert,
+            textinput: TextArea::default(),
+            textoutput: TextArea::default(),
             vm: VM::new(),
         }
     }
@@ -76,105 +96,253 @@ pub fn start_ui(_path: PathBuf, vm: VM) -> anyhow::Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
-        if let Event::Key(key) = event::read()? {
-            match app.input_mode {
-                InputMode::Normal => match key.code {
-                    KeyCode::Char('e') => {
-                        app.input_mode = InputMode::Editing;
+        let input = crossterm::event::read()?.into();
+        match app.mode {
+            // Mode::Normal => match input {
+            //     // Mappings in normal mode
+            //     Input {
+            //         key: Key::Char('h'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Back),
+            //     Input {
+            //         key: Key::Char('j'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Down),
+            //     Input {
+            //         key: Key::Char('k'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Up),
+            //     Input {
+            //         key: Key::Char('l'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Forward),
+            //     Input {
+            //         key: Key::Char('w'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::WordForward),
+            //     Input {
+            //         key: Key::Char('b'),
+            //         ctrl: false,
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::WordBack),
+            //     Input {
+            //         key: Key::Char('^'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::Head),
+            //     Input {
+            //         key: Key::Char('$'),
+            //         ..
+            //     } => app.textinput.move_cursor(CursorMove::End),
+            //     Input {
+            //         key: Key::Char('D'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_line_by_end();
+            //     }
+            //     Input {
+            //         key: Key::Char('C'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_line_by_end();
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('p'),
+            //         ..
+            //     } => {
+            //         app.textinput.paste();
+            //     }
+            //     Input {
+            //         key: Key::Char('u'),
+            //         ctrl: false,
+            //         ..
+            //     } => {
+            //         app.textinput.undo();
+            //     }
+            //     Input {
+            //         key: Key::Char('r'),
+            //         ctrl: true,
+            //         ..
+            //     } => {
+            //         app.textinput.redo();
+            //     }
+            //     Input {
+            //         key: Key::Char('x'),
+            //         ..
+            //     } => {
+            //         app.textinput.delete_next_char();
+            //     }
+            //     Input {
+            //         key: Key::Char('i'),
+            //         ..
+            //     } => app.mode = Mode::Insert,
+            //     Input {
+            //         key: Key::Char('a'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Forward);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('A'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::End);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('o'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::End);
+            //         app.textinput.insert_newline();
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('O'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Head);
+            //         app.textinput.insert_newline();
+            //         app.textinput.move_cursor(CursorMove::Up);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('I'),
+            //         ..
+            //     } => {
+            //         app.textinput.move_cursor(CursorMove::Head);
+            //         app.mode = Mode::Insert;
+            //     }
+            //     Input {
+            //         key: Key::Char('q'),
+            //         ..
+            //     } => return Ok(()),
+            //     Input {
+            //         key: Key::Char('e'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll((1, 0)),
+            //     Input {
+            //         key: Key::Char('y'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll((-1, 0)),
+            //     Input {
+            //         key: Key::Char('d'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::HalfPageDown),
+            //     Input {
+            //         key: Key::Char('u'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::HalfPageUp),
+            //     Input {
+            //         key: Key::Char('f'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::PageDown),
+            //     Input {
+            //         key: Key::Char('b'),
+            //         ctrl: true,
+            //         ..
+            //     } => app.textinput.scroll(Scrolling::PageUp),
+            //     _ => {}
+            // },
+            Mode::Insert => match input {
+                // Input { key: Key::Esc, .. }
+                // | Input {
+                //     key: Key::Char('c'),
+                //     ctrl: true,
+                //     ..
+                // } => {
+                //     app.mode = Mode::Normal; // Back to normal mode with Esc or Ctrl+C
+                // }
+                Input {
+                    key: Key::Enter, ..
+                } => {
+                    let message: String = app.textinput.lines().join("\n");
+                    match message.trim() {
+                        "exit" | "quit" | ":q" | "q" => return Ok(()),
+                        _ => (),
                     }
-                    KeyCode::Char('q') => {
-                        return Ok(());
-                    }
-                    _ => {}
-                },
-                InputMode::Editing => match key.code {
-                    KeyCode::Enter => {
-                        let message: String = app.input.drain(..).collect();
-                        match message.trim() {
-                            "exit" | "quit" | ":q" | "q" => return Ok(()),
-                            _ => (),
-                        }
-                        let mut fcall = message.split(" ");
-                        let calling_context = FunctionContext::new();
-                        if let Some(name) = fcall.next() {
-                            match name.as_ref() {
-                                ":args" => {
-                                    let func = if let Some(name) = fcall.next() {
-                                        Some((name, app.vm.get_function(name)))
-                                    } else {
-                                        None
-                                    };
-                                    let msg = match func {
-                                        Some((name, Some(func))) => {
-                                            format!("fn {}({:?})", name, func.get_arguments())
-                                        }
-                                        Some((name, None)) => {
-                                            format!("Could not find function {}!", name)
-                                        }
-                                        None => format!("No function name specified!"),
-                                    };
-                                    app.messages.push(format!("{}", msg));
-                                }
-                                ":code" => {
-                                    let func = if let Some(name) = fcall.next() {
-                                        Some((name, app.vm.get_function(name)))
-                                    } else {
-                                        None
-                                    };
-                                    let msg = match func {
-                                        Some((name, Some(func))) => {
-                                            format!("fn {}:\n{:?})", name, func)
-                                        }
-                                        Some((name, None)) => {
-                                            format!("Could not find function {}!", name)
-                                        }
-                                        None => format!("No function name specified!"),
-                                    };
-                                    app.messages.push(format!("{}", msg));
-                                }
-                                _ => {
-                                    let result = app.vm.call_function(
-                                        name,
-                                        &calling_context,
-                                        &fcall
-                                            .flat_map(|s| {
-                                                if let Some((name, value)) = s.split_once("=") {
-                                                    Some((
-                                                        name.to_string(),
-                                                        Expr::Value(
-                                                            ron::from_str::<Value>(value).unwrap(),
-                                                        ),
-                                                    ))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect(),
-                                    );
-                                    app.messages.push(format!("{:?}", result));
-                                }
+                    let mut fcall = message.split(" ");
+                    let calling_context = FunctionContext::new();
+                    if let Some(name) = fcall.next() {
+                        match name.as_ref() {
+                            ":args" => {
+                                let func = if let Some(name) = fcall.next() {
+                                    Some((name, app.vm.get_function(name)))
+                                } else {
+                                    None
+                                };
+                                let msg = match func {
+                                    Some((name, Some(func))) => {
+                                        format!("fn {}({:?})", name, func.get_arguments())
+                                    }
+                                    Some((name, None)) => {
+                                        format!("Could not find function {}!", name)
+                                    }
+                                    None => format!("No function name specified!"),
+                                };
+                                app.textoutput.insert_str(format!("{}", msg));
+                                app.textoutput.insert_newline();
+                            }
+                            ":code" => {
+                                let func = if let Some(name) = fcall.next() {
+                                    Some((name, app.vm.get_function(name)))
+                                } else {
+                                    None
+                                };
+                                let msg = match func {
+                                    Some((name, Some(func))) => {
+                                        format!("fn {}:\n{:?})", name, func)
+                                    }
+                                    Some((name, None)) => {
+                                        format!("Could not find function {}!", name)
+                                    }
+                                    None => format!("No function name specified!"),
+                                };
+                                app.textoutput.insert_str(format!("{}", msg));
+                                app.textoutput.insert_newline();
+                            }
+                            _ => {
+                                let result = app.vm.call_function(
+                                    name,
+                                    &calling_context,
+                                    &fcall
+                                        .flat_map(|s| {
+                                            if let Some((name, value)) = s.split_once("=") {
+                                                Some((
+                                                    name.to_string(),
+                                                    Expr::Value(
+                                                        ron::from_str::<Value>(value).unwrap(),
+                                                    ),
+                                                ))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect(),
+                                );
+                                app.textoutput.insert_str(format!("{:?}", result));
+                                app.textoutput.insert_newline();
                             }
                         }
                     }
-                    KeyCode::Char(c) => {
-                        app.input.push(c);
-                    }
-                    KeyCode::Backspace => {
-                        app.input.pop();
-                    }
-                    KeyCode::Esc => {
-                        app.input_mode = InputMode::Normal;
-                    }
-                    _ => {}
-                },
-            }
+                }
+                input => {
+                    app.textinput.input(input); // Use default key mappings in insert mode
+                }
+            },
         }
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -188,18 +356,18 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         )
         .split(f.size());
 
-    let (msg, style) = match app.input_mode {
-        InputMode::Normal => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to start editing."),
-            ],
-            Style::default().add_modifier(Modifier::RAPID_BLINK),
-        ),
-        InputMode::Editing => (
+    let (msg, style) = match app.mode {
+        // Mode::Normal => (
+        //     vec![
+        //         Span::raw("Press "),
+        //         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+        //         Span::raw(" to exit, "),
+        //         Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+        //         Span::raw(" to start editing."),
+        //     ],
+        //     Style::default().add_modifier(Modifier::RAPID_BLINK),
+        // ),
+        Mode::Insert => (
             vec![
                 Span::raw("Press "),
                 Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
@@ -217,31 +385,21 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let help_message = Paragraph::new(text);
     f.render_widget(help_message, chunks[0]);
 
-    let input = Paragraph::new(app.input.as_ref())
-        .style(match app.input_mode {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Yellow),
-        })
-        .block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(input, chunks[1]);
-    match app.input_mode {
-        InputMode::Normal =>
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            {}
+    // Change the cursor color looking at current mode
+    let color = app.mode.cursor_color();
+    let style = Style::default().fg(color).add_modifier(Modifier::REVERSED);
+    app.textinput.set_cursor_style(style);
+    app.textinput
+        .set_block(Block::default().borders(Borders::ALL).title("Input"));
+    f.render_widget(app.textinput.widget(), chunks[1]);
+    let block = Block::default().borders(Borders::ALL).title(Span::styled(
+        "Messages",
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+    ));
 
-        InputMode::Editing => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor(
-                // Put cursor past the end of the input text
-                chunks[1].x + app.input.width() as u16 + 1,
-                // Move one line down, from the border to the input line
-                chunks[1].y + 1,
-            )
-        }
-    }
+    app.textoutput.set_block(block);
 
-    let mut text = Text::from(Spans::from(app.messages.join("\n")));
-    text.patch_style(style);
-    let result_message = Paragraph::new(text).wrap(Wrap { trim: true });
-    f.render_widget(result_message, chunks[2]);
+    f.render_widget(app.textoutput.widget(), chunks[2]);
 }
