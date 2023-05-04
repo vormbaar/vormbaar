@@ -112,30 +112,32 @@ fn create_demo_code() -> anyhow::Result<VM> {
         "main",
         Function::new(vec![For(
             Range::Range {
-                item: s!("it"),
                 start: Expr::Value(Scalar(I32(0))),
                 stop: Expr::Arg(s!("n")),
                 step: Expr::Value(Scalar(I32(1))),
                 mode: RangeMode::Exclusive,
             },
-            [If(
-                BinaryOp(
-                    Eq,
-                    Var(s!("it")).into(),
-                    BinaryOp(Sub, Arg(s!("n")).into(), Value(Scalar(I32(1))).into()).into(),
-                )
-                .into(),
-                [Return(Call(
-                    "factorial".into(),
-                    BTreeMap::from([("n".to_string(), Arg("init".into()))]),
-                ))]
-                .into(),
-                [Drop(Call(
-                    "factorial".into(),
-                    BTreeMap::from([("n".to_string(), Arg("init".into()))]),
-                ))]
-                .into(),
-            )]
+            [
+                VarAssign(s!("it"), Item),
+                If(
+                    BinaryOp(
+                        Eq,
+                        Var(s!("it")).into(),
+                        BinaryOp(Sub, Arg(s!("n")).into(), Value(Scalar(I32(1))).into()).into(),
+                    )
+                    .into(),
+                    [Return(Call(
+                        "factorial".into(),
+                        BTreeMap::from([("n".to_string(), Arg("init".into()))]),
+                    ))]
+                    .into(),
+                    [Drop(Call(
+                        "factorial".into(),
+                        BTreeMap::from([("n".to_string(), Arg("init".into()))]),
+                    ))]
+                    .into(),
+                ),
+            ]
             .into(),
         )]),
     )

@@ -52,6 +52,7 @@ pub enum Expr {
     Const(String),
     Var(String),
     Arg(String),
+    Item,
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
     Call(String, BTreeMap<String, Expr>),
@@ -65,6 +66,7 @@ impl Expr {
             Expr::Value(_) => (),
             Expr::Const(_) => (),
             Expr::Var(_) => (),
+            Expr::Item => (),
             Expr::Arg(name) => args.push(name.to_owned()),
             Expr::BinaryOp(_, left, right) => {
                 args.extend(left.get_arguments().into_iter());
@@ -142,12 +144,8 @@ pub enum RangeMode {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Range {
-    Values {
-        item: String,
-        values: Vec<Value>,
-    },
+    Values(Vec<Value>),
     Range {
-        item: String,
         start: Expr,
         stop: Expr,
         step: Expr,
@@ -257,6 +255,7 @@ impl VM {
     pub fn eval_expression(
         &self,
         local_context: &FunctionContext,
+        iteration_item: &Option<Value>,
         expr: &Expr,
     ) -> anyhow::Result<Value> {
         match expr {
@@ -276,9 +275,13 @@ impl VM {
                 Some(value) => Ok(value.clone()),
                 None => Err(anyhow!("Cannot find argument named {:?}", name)),
             },
+            Expr::Item => match iteration_item {
+                Some(value) => Ok(value.clone()),
+                None => Err(anyhow!("Cannot find iteration item")),
+            },
             Expr::BinaryOp(op, left, right) => {
-                let left = self.eval_expression(local_context, left)?;
-                let right = self.eval_expression(local_context, right)?;
+                let left = self.eval_expression(local_context, iteration_item, left)?;
+                let right = self.eval_expression(local_context, iteration_item, right)?;
                 match op {
                     BinaryOp::Add => match (left, right) {
                         (
@@ -362,6 +365,7 @@ impl VM {
     ) -> anyhow::Result<Returned> {
         self.eval_instructions(
             calling_context,
+            &None,
             &self
                 .state
                 .functions
@@ -376,117 +380,116 @@ impl VM {
     pub fn eval_instructions(
         &self,
         calling_context: &FunctionContext,
+        iteration_item: &Option<Value>,
         instructions: &Vec<Instruction>,
         args: &BTreeMap<String, Expr>,
     ) -> anyhow::Result<Returned> {
         let mut local_context = calling_context.clone();
         for (name, arg) in args {
-            let value = self.eval_expression(&calling_context, &arg)?;
+            let value = self.eval_expression(&calling_context, iteration_item, &arg)?;
             local_context.arguments.insert(name.clone(), value);
         }
 
         for instruction in instructions {
             match instruction {
                 Instruction::If(comparison, if_true, if_false) => {
-                    let comparison = self.eval_expression(&local_context, comparison)?;
+                    let comparison =
+                        self.eval_expression(&local_context, iteration_item, comparison)?;
                     let is_true = match comparison {
                         Value::Scalar(Scalar::I32(value)) => value != 0,
                         _ => false,
                     };
                     let body = if is_true { if_true } else { if_false };
 
-                    let value = self.eval_instructions(
-                        &local_context,
-                        body,
-                        &local_context
-                            .arguments
-                            .iter()
-                            .map(|(name, expr)| (name.clone(), Expr::Value(expr.clone())))
-                            .collect(),
-                    )?;
+                    let args = local_context
+                        .arguments
+                        .iter()
+                        .map(|(name, expr)| (name.clone(), Expr::Value(expr.clone())))
+                        .collect();
+
+                    let value =
+                        self.eval_instructions(&local_context, iteration_item, body, &args)?;
                     if let Returned::Early(value) = value {
                         return Ok(Returned::Early(value));
                     }
                 }
                 Instruction::ConstAssign(name, expr) => {
-                    let value = self.eval_expression(&local_context, &expr)?;
+                    let value = self.eval_expression(&local_context, iteration_item, &expr)?;
                     local_context.constants.insert(name.clone(), value);
                 }
                 Instruction::VarAssign(name, expr) => {
-                    let value = self.eval_expression(&local_context, &expr)?;
+                    let value = self.eval_expression(&local_context, iteration_item, &expr)?;
                     local_context.variables.insert(name.clone(), value);
                 }
                 Instruction::Drop(_) => {}
                 Instruction::Return(expr) => {
                     return self
-                        .eval_expression(&local_context, expr)
+                        .eval_expression(&local_context, iteration_item, expr)
                         .map(Returned::Early)
                 }
-                Instruction::For(range, instructions) => {
-                    let mut loop_context = local_context.clone();
-                    match range {
-                        Range::Range {
-                            item,
-                            start,
-                            stop,
-                            step,
-                            mode,
-                        } => {
-                            let start = self.eval_expression(&loop_context, start)?;
-                            let stop = self.eval_expression(&loop_context, stop)?;
-                            let step = self.eval_expression(&loop_context, step)?;
-                            match (start, stop, step) {
-                                (
-                                    Value::Scalar(Scalar::I32(start)),
-                                    Value::Scalar(Scalar::I32(stop)),
-                                    Value::Scalar(Scalar::I32(step)),
-                                ) => {
-                                    for v in match &mode {
+                Instruction::For(range, instructions) => match range {
+                    Range::Range {
+                        start,
+                        stop,
+                        step,
+                        mode,
+                    } => {
+                        let start = self.eval_expression(&local_context, iteration_item, start)?;
+                        let stop = self.eval_expression(&local_context, iteration_item, stop)?;
+                        let step = self.eval_expression(&local_context, iteration_item, step)?;
+                        match (start, stop, step) {
+                            (
+                                Value::Scalar(Scalar::I32(start)),
+                                Value::Scalar(Scalar::I32(stop)),
+                                Value::Scalar(Scalar::I32(step)),
+                            ) => {
+                                for v in
+                                    match &mode {
                                         RangeMode::Inclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
                                         RangeMode::Exclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
-                                    } {
-                                        loop_context.variables.insert(
-                                            item.clone(),
-                                            Value::Scalar(Scalar::I32(v as i32)),
-                                        );
-                                        let value = self.eval_instructions(
-                                            &loop_context,
-                                            instructions,
-                                            &args,
-                                        )?;
-                                        if let Returned::Early(_) = value {
-                                            return Ok(value);
-                                        }
-                                        if let Instruction::Return(_) = instruction {
-                                            return Ok(Returned::Early(value.into_inner()));
-                                        }
+                                    }
+                                {
+                                    let value = self.eval_instructions(
+                                        &local_context,
+                                        &Some(Value::Scalar(Scalar::I32(v as i32))),
+                                        instructions,
+                                        &args,
+                                    )?;
+                                    if let Returned::Early(_) = value {
+                                        return Ok(value);
+                                    }
+                                    if let Instruction::Return(_) = instruction {
+                                        return Ok(Returned::Early(value.into_inner()));
                                     }
                                 }
-                                (Value::Vector(_), _, _) | (Value::None, _, _) => {
-                                    bail!(r#"Field "start" must be a vector!"#)
-                                }
-                                (_, Value::Vector(_), _) | (_, Value::None, _) => {
-                                    bail!(r#"Field "stop" must be a vector!"#)
-                                }
-                                (_, _, Value::Vector(_)) | (_, _, Value::None) => {
-                                    bail!(r#"Field "step" must be a vector!"#)
-                                }
                             }
-                        }
-                        Range::Values { item, values } => {
-                            for v in values {
-                                loop_context.variables.insert(item.clone(), v.clone());
-                                let value =
-                                    self.eval_instructions(&loop_context, instructions, &args)?;
-                                if let Returned::Early(_) = value {
-                                    return Ok(value);
-                                }
+                            (Value::Vector(_), _, _) | (Value::None, _, _) => {
+                                bail!(r#"Field "start" must be a vector!"#)
+                            }
+                            (_, Value::Vector(_), _) | (_, Value::None, _) => {
+                                bail!(r#"Field "stop" must be a vector!"#)
+                            }
+                            (_, _, Value::Vector(_)) | (_, _, Value::None) => {
+                                bail!(r#"Field "step" must be a vector!"#)
                             }
                         }
                     }
-                }
+                    Range::Values(values) => {
+                        for v in values {
+                            let value = self.eval_instructions(
+                                &local_context,
+                                &Some(v.clone()),
+                                instructions,
+                                &args,
+                            )?;
+                            if let Returned::Early(_) = value {
+                                return Ok(value);
+                            }
+                        }
+                    }
+                },
             }
         }
         Ok(Returned::Finished(Value::None))

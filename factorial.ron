@@ -13,12 +13,12 @@
             ]),
             "main": ([
                 For(Range(
-                    item: "it",
                     start: Value(0),
                     stop: Arg("n"),
                     step: Value(1),
                     mode: Exclusive,
                 ), [
+                    VarAssign("it", Item),
                     If(BinaryOp(Eq, Var("it"), BinaryOp(Sub, Arg("n"), Value(1))), [
                         Return(Call("factorial", {
                             "n": Arg("init"),
