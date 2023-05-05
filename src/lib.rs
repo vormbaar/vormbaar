@@ -9,6 +9,7 @@ use anyhow::{anyhow, bail};
 #[serde(untagged)]
 pub enum Scalar {
     I32(i32),
+    Char(char),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,6 +53,7 @@ pub enum Expr {
     Const(String),
     Var(String),
     Arg(String),
+    Index(Box<Expr>, Box<Expr>),
     Item,
     BinaryOp(BinaryOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
@@ -66,6 +68,10 @@ impl Expr {
             Expr::Value(_) => (),
             Expr::Const(_) => (),
             Expr::Var(_) => (),
+            Expr::Index(left, right) => {
+                args.extend(left.get_arguments().into_iter());
+                args.extend(right.get_arguments().into_iter());
+            }
             Expr::Item => (),
             Expr::Arg(name) => args.push(name.to_owned()),
             Expr::BinaryOp(_, left, right) => {
@@ -252,6 +258,31 @@ impl VM {
     }
 
     #[cfg_attr(feature = "flame", tracing::instrument)]
+    pub fn value_equal(
+        &self,
+        local_context: &FunctionContext,
+        iteration_item: &Option<Value>,
+        left: &Value,
+        right: &Value,
+    ) -> bool {
+        match (left, right) {
+            (Value::Scalar(Scalar::I32(left_value)), Value::Scalar(Scalar::I32(right_value))) => {
+                left_value == right_value
+            }
+            (Value::Scalar(Scalar::Char(left_value)), Value::Scalar(Scalar::Char(right_value))) => {
+                left_value == right_value
+            }
+            (Value::Vector(vec), Value::Vector(vec2)) => vec
+                .iter()
+                .zip(vec2)
+                .map(|(left, right)| self.value_equal(local_context, iteration_item, left, right))
+                .all(|v| v),
+            (Value::None, Value::None) => true,
+            _ => false,
+        }
+    }
+
+    #[cfg_attr(feature = "flame", tracing::instrument)]
     pub fn eval_expression(
         &self,
         local_context: &FunctionContext,
@@ -267,6 +298,20 @@ impl VM {
                     None => Err(anyhow!("Cannot find constant named {:?}", name)),
                 },
             },
+            Expr::Index(container, index) => {
+                let container = self.eval_expression(local_context, iteration_item, container)?;
+                let index = self.eval_expression(local_context, iteration_item, index)?;
+                match container {
+                    Value::Vector(container) => match index {
+                        Value::Scalar(Scalar::I32(index)) => match container.get(index as usize) {
+                            Some(value) => Ok(value.clone()),
+                            None => Err(anyhow!("Index out of range!")),
+                        },
+                        _ => Err(anyhow!("Index must be I32!")),
+                    },
+                    _ => Err(anyhow!("LHS is not indexable!")),
+                }
+            }
             Expr::Var(name) => match local_context.variables.get(name) {
                 Some(value) => Ok(value.clone()),
                 None => Err(anyhow!("Cannot find variable named {:?}", name,)),
@@ -333,20 +378,10 @@ impl VM {
                         (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
                         _ => Err(anyhow!("Type mismatch")),
                     },
-                    BinaryOp::Eq => match (left, right) {
-                        (
-                            Value::Scalar(Scalar::I32(left_value)),
-                            Value::Scalar(Scalar::I32(right_value)),
-                        ) => Ok(Value::Scalar(Scalar::I32(
-                            (left_value == right_value).into(),
-                        ))),
-                        // (Value::U32(left_value), Value::U32(right_value)) => {
-                        //     Ok(Value::U32(if left_value < right_value { 1 } else { 0 }))
-                        // }
-                        (Value::None, _) => Err(anyhow!("Cannot compare to number to None")),
-                        (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
-                        _ => Err(anyhow!("Type mismatch")),
-                    },
+                    BinaryOp::Eq => Ok(Value::Scalar(Scalar::I32(
+                        self.value_equal(local_context, iteration_item, &left, &right)
+                            .into(),
+                    ))),
                 }
             }
             Expr::UnaryOp { .. } => Ok(Value::None),
@@ -464,6 +499,9 @@ impl VM {
                                         return Ok(Returned::Early(value.into_inner()));
                                     }
                                 }
+                            }
+                            (Value::Scalar(_), Value::Scalar(_), Value::Scalar(_)) => {
+                                bail!(r#"Only I32 is allowed for iteration!"#)
                             }
                             (Value::Vector(_), _, _) | (Value::None, _, _) => {
                                 bail!(r#"Field "start" must be a vector!"#)
