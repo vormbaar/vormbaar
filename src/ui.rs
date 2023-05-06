@@ -313,6 +313,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                                 let result = app.vm.call_function(
                                     name,
                                     &calling_context,
+                                    &None,
                                     &fcall
                                         .flat_map(|s| {
                                             if let Some((name, value)) = s.split_once("=") {

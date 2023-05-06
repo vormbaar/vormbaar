@@ -253,6 +253,7 @@ fn main() -> anyhow::Result<()> {
                 .call_function(
                     &entrypoint,
                     &local_context,
+                    &None,
                     &args
                         .iter()
                         .map(|(name, &value)| {
