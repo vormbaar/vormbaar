@@ -3,31 +3,60 @@
         constants: {},
         functions: {
             "factorial": ([
-                If(BinaryOp(Lt, Arg("n"), Value(2)), [
-                    Return(Value(1)),
+                Value(1),
+                Return((0)),
+                Arg("n"),
+                Arg("n"),
+                Value(1),
+                BinaryOp(Sub, (3), (4)),
+                Call("factorial", {
+                    "n": (5),
+                }),
+                BinaryOp(Mul, (2), (6)),
+                Return((7)),
+                Arg("n"),
+                Value(2),
+                BinaryOp(Lt, (9), (10)),
+                If((11), [
+                    (1),
                 ], [
-                    Return(BinaryOp(Mul, Arg("n"), Call("factorial", {
-                        "n": BinaryOp(Sub, Arg("n"), Value(1)),
-                    }))),
+                    (8),
                 ]),
             ]),
             "main": ([
+                Value(0),
+                Arg("n"),
+                Value(1),
+                Item,
+                VarAssign("it", (3)),
+                Var("it"),
+                Arg("n"),
+                Value(1),
+                BinaryOp(Sub, (6), (7)),
+                BinaryOp(Eq, (5), (8)),
+                Arg("init"),
+                Call("factorial", {
+                    "n": (10),
+                }),
+                Return((11)),
+                Arg("init"),
+                Call("factorial", {
+                    "n": (13),
+                }),
+                Drop((14)),
+                If((9), [
+                    (12),
+                ], [
+                    (15),
+                ]),
                 For(Range(
-                    start: Value(0),
-                    stop: Arg("n"),
-                    step: Value(1),
+                    start: (0),
+                    stop: (1),
+                    step: (2),
                     mode: Exclusive,
                 ), [
-                    VarAssign("it", Item),
-                    If(BinaryOp(Eq, Var("it"), BinaryOp(Sub, Arg("n"), Value(1))), [
-                        Return(Call("factorial", {
-                            "n": Arg("init"),
-                        })),
-                    ], [
-                        Drop(Call("factorial", {
-                            "n": Arg("init"),
-                        })),
-                    ]),
+                    (4),
+                    (16),
                 ]),
             ]),
         },

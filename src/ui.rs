@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -18,7 +18,7 @@ use tui::{
 #[allow(unused_imports)]
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
-use crate::{Expr, FunctionContext, Value, VM};
+use vorm::{FunctionContext, Value, VM};
 
 enum Mode {
     // Normal,
@@ -310,24 +310,27 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                                 app.text_output.insert_newline();
                             }
                             _ => {
+                                let args = &fcall
+                                    .flat_map(|s| {
+                                        if let Some((name, value)) = s.split_once("=") {
+                                            Some((name, ron::from_str::<Value>(value).unwrap()))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect::<BTreeMap<_, _>>();
                                 let result = app.vm.call_function(
                                     name,
                                     &calling_context,
                                     &None,
-                                    &fcall
-                                        .flat_map(|s| {
-                                            if let Some((name, value)) = s.split_once("=") {
-                                                Some((
-                                                    name.to_string(),
-                                                    Expr::Value(
-                                                        ron::from_str::<Value>(value).unwrap(),
-                                                    ),
-                                                ))
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect(),
+                                    Some(
+                                        &args
+                                            .iter()
+                                            .map(|(name, value)| {
+                                                (name.to_owned().to_owned(), value)
+                                            })
+                                            .collect(),
+                                    ),
                                 );
                                 app.text_output.insert_str(format!("{:?}", result));
                                 app.text_output.insert_newline();
