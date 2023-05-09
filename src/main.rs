@@ -229,7 +229,7 @@ fn main() -> anyhow::Result<()> {
             if let Some(args) = vm.get_function(&function).map(Function::get_arguments) {
                 println!("Found args: {:?}", args);
             } else {
-                println!("No aruguments found!");
+                println!("No arguments found!");
             }
         }
         Command::Run {

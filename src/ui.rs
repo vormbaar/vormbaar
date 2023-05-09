@@ -18,7 +18,7 @@ use tui::{
 #[allow(unused_imports)]
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
-use vorm::{Expr, FunctionContext, Value, VM};
+use crate::{Expr, FunctionContext, Value, VM};
 
 enum Mode {
     // Normal,
@@ -47,8 +47,8 @@ impl fmt::Display for Mode {
 struct App<'a> {
     /// Current input mode
     mode: Mode,
-    textinput: TextArea<'a>,
-    textoutput: TextArea<'a>,
+    text_input: TextArea<'a>,
+    text_output: TextArea<'a>,
     vm: VM,
 }
 
@@ -56,8 +56,8 @@ impl<'a> Default for App<'a> {
     fn default() -> App<'a> {
         App {
             mode: Mode::Insert,
-            textinput: TextArea::default(),
-            textoutput: TextArea::default(),
+            text_input: TextArea::default(),
+            text_output: TextArea::default(),
             vm: VM::new(),
         }
     }
@@ -105,74 +105,74 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
             //     Input {
             //         key: Key::Char('h'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::Back),
+            //     } => app.text_input.move_cursor(CursorMove::Back),
             //     Input {
             //         key: Key::Char('j'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::Down),
+            //     } => app.text_input.move_cursor(CursorMove::Down),
             //     Input {
             //         key: Key::Char('k'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::Up),
+            //     } => app.text_input.move_cursor(CursorMove::Up),
             //     Input {
             //         key: Key::Char('l'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::Forward),
+            //     } => app.text_input.move_cursor(CursorMove::Forward),
             //     Input {
             //         key: Key::Char('w'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::WordForward),
+            //     } => app.text_input.move_cursor(CursorMove::WordForward),
             //     Input {
             //         key: Key::Char('b'),
             //         ctrl: false,
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::WordBack),
+            //     } => app.text_input.move_cursor(CursorMove::WordBack),
             //     Input {
             //         key: Key::Char('^'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::Head),
+            //     } => app.text_input.move_cursor(CursorMove::Head),
             //     Input {
             //         key: Key::Char('$'),
             //         ..
-            //     } => app.textinput.move_cursor(CursorMove::End),
+            //     } => app.text_input.move_cursor(CursorMove::End),
             //     Input {
             //         key: Key::Char('D'),
             //         ..
             //     } => {
-            //         app.textinput.delete_line_by_end();
+            //         app.text_input.delete_line_by_end();
             //     }
             //     Input {
             //         key: Key::Char('C'),
             //         ..
             //     } => {
-            //         app.textinput.delete_line_by_end();
+            //         app.text_input.delete_line_by_end();
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
             //         key: Key::Char('p'),
             //         ..
             //     } => {
-            //         app.textinput.paste();
+            //         app.text_input.paste();
             //     }
             //     Input {
             //         key: Key::Char('u'),
             //         ctrl: false,
             //         ..
             //     } => {
-            //         app.textinput.undo();
+            //         app.text_input.undo();
             //     }
             //     Input {
             //         key: Key::Char('r'),
             //         ctrl: true,
             //         ..
             //     } => {
-            //         app.textinput.redo();
+            //         app.text_input.redo();
             //     }
             //     Input {
             //         key: Key::Char('x'),
             //         ..
             //     } => {
-            //         app.textinput.delete_next_char();
+            //         app.text_input.delete_next_char();
             //     }
             //     Input {
             //         key: Key::Char('i'),
@@ -182,38 +182,38 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
             //         key: Key::Char('a'),
             //         ..
             //     } => {
-            //         app.textinput.move_cursor(CursorMove::Forward);
+            //         app.text_input.move_cursor(CursorMove::Forward);
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
             //         key: Key::Char('A'),
             //         ..
             //     } => {
-            //         app.textinput.move_cursor(CursorMove::End);
+            //         app.text_input.move_cursor(CursorMove::End);
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
             //         key: Key::Char('o'),
             //         ..
             //     } => {
-            //         app.textinput.move_cursor(CursorMove::End);
-            //         app.textinput.insert_newline();
+            //         app.text_input.move_cursor(CursorMove::End);
+            //         app.text_input.insert_newline();
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
             //         key: Key::Char('O'),
             //         ..
             //     } => {
-            //         app.textinput.move_cursor(CursorMove::Head);
-            //         app.textinput.insert_newline();
-            //         app.textinput.move_cursor(CursorMove::Up);
+            //         app.text_input.move_cursor(CursorMove::Head);
+            //         app.text_input.insert_newline();
+            //         app.text_input.move_cursor(CursorMove::Up);
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
             //         key: Key::Char('I'),
             //         ..
             //     } => {
-            //         app.textinput.move_cursor(CursorMove::Head);
+            //         app.text_input.move_cursor(CursorMove::Head);
             //         app.mode = Mode::Insert;
             //     }
             //     Input {
@@ -224,32 +224,32 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
             //         key: Key::Char('e'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll((1, 0)),
+            //     } => app.text_input.scroll((1, 0)),
             //     Input {
             //         key: Key::Char('y'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll((-1, 0)),
+            //     } => app.text_input.scroll((-1, 0)),
             //     Input {
             //         key: Key::Char('d'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll(Scrolling::HalfPageDown),
+            //     } => app.text_input.scroll(Scrolling::HalfPageDown),
             //     Input {
             //         key: Key::Char('u'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll(Scrolling::HalfPageUp),
+            //     } => app.text_input.scroll(Scrolling::HalfPageUp),
             //     Input {
             //         key: Key::Char('f'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll(Scrolling::PageDown),
+            //     } => app.text_input.scroll(Scrolling::PageDown),
             //     Input {
             //         key: Key::Char('b'),
             //         ctrl: true,
             //         ..
-            //     } => app.textinput.scroll(Scrolling::PageUp),
+            //     } => app.text_input.scroll(Scrolling::PageUp),
             //     _ => {}
             // },
             Mode::Insert => match input {
@@ -264,7 +264,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                 Input {
                     key: Key::Enter, ..
                 } => {
-                    let message: String = app.textinput.lines().join("\n");
+                    let message: String = app.text_input.lines().join("\n");
                     match message.trim() {
                         "exit" | "quit" | ":q" | "q" => return Ok(()),
                         _ => (),
@@ -288,8 +288,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                                     }
                                     None => format!("No function name specified!"),
                                 };
-                                app.textoutput.insert_str(format!("{}", msg));
-                                app.textoutput.insert_newline();
+                                app.text_output.insert_str(format!("{}", msg));
+                                app.text_output.insert_newline();
                             }
                             ":code" => {
                                 let func = if let Some(name) = fcall.next() {
@@ -306,8 +306,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                                     }
                                     None => format!("No function name specified!"),
                                 };
-                                app.textoutput.insert_str(format!("{}", msg));
-                                app.textoutput.insert_newline();
+                                app.text_output.insert_str(format!("{}", msg));
+                                app.text_output.insert_newline();
                             }
                             _ => {
                                 let result = app.vm.call_function(
@@ -329,14 +329,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> anyhow::Resu
                                         })
                                         .collect(),
                                 );
-                                app.textoutput.insert_str(format!("{:?}", result));
-                                app.textoutput.insert_newline();
+                                app.text_output.insert_str(format!("{:?}", result));
+                                app.text_output.insert_newline();
                             }
                         }
                     }
                 }
                 input => {
-                    app.textinput.input(input); // Use default key mappings in insert mode
+                    app.text_input.input(input); // Use default key mappings in insert mode
                 }
             },
         }
@@ -389,10 +389,10 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     // Change the cursor color looking at current mode
     let color = app.mode.cursor_color();
     let style = Style::default().fg(color).add_modifier(Modifier::REVERSED);
-    app.textinput.set_cursor_style(style);
-    app.textinput
+    app.text_input.set_cursor_style(style);
+    app.text_input
         .set_block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(app.textinput.widget(), chunks[1]);
+    f.render_widget(app.text_input.widget(), chunks[1]);
     let block = Block::default().borders(Borders::ALL).title(Span::styled(
         "Messages",
         Style::default()
@@ -400,7 +400,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             .add_modifier(Modifier::BOLD),
     ));
 
-    app.textoutput.set_block(block);
+    app.text_output.set_block(block);
 
-    f.render_widget(app.textoutput.widget(), chunks[2]);
+    f.render_widget(app.text_output.widget(), chunks[2]);
 }
