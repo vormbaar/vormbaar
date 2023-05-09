@@ -1,9 +1,69 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-// todo: remove this one day
-// maybe replace with thiserror
-use anyhow::{anyhow, bail};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum AddConstantError {
+    #[error("Constant already exists: {name}")]
+    ConstantAlreadyExists { name: String },
+}
+
+#[derive(Debug, Error)]
+pub enum AddFunctionError {
+    #[error("Function already exists: {name}")]
+    FunctionAlreadyExists { name: String },
+}
+
+#[derive(Debug, Error)]
+pub enum EvalInstructionsError {
+    #[error("Evaluating expression failed with error: {0}")]
+    EvalExpressionFailed(#[from] Box<EvalExpressionError>),
+    #[error(r#"Only I32 is allowed for iteration!"#)]
+    IteratorMustBeI32,
+    #[error(r#"Field "start" must be an I32!"#)]
+    StartMustBeI32,
+    #[error(r#"Field "stop" must be an I32!"#)]
+    StopMustBeI32,
+    #[error(r#"Field "step" must be an I32!"#)]
+    StepMustBeI32,
+}
+
+#[derive(Debug, Error)]
+pub enum CallFunctionError {
+    #[error("Evaluating expression failed with error: {0}")]
+    EvalExpressionFailed(#[from] Box<EvalExpressionError>),
+    #[error("Evaluating instructions failed with error: {0}")]
+    EvalInstructionFailed(#[from] EvalInstructionsError),
+    #[error(r#"function "{name}" not found!"#)]
+    FunctionNotFound { name: String },
+}
+
+#[derive(Debug, Error)]
+pub enum EvalExpressionError {
+    #[error("Cannot find constant named {name}")]
+    ConstantNotFound { name: String },
+    #[error("Index is out of range")]
+    IndexOutOfRange,
+    #[error("Index must be I32!")]
+    IndexMustBeI32,
+    #[error("LHS is not indexable!")]
+    LhsNotIndexable,
+    #[error("Cannot find variable named {name}")]
+    VariableNotFound { name: String },
+    #[error("Cannot find argument named {name}")]
+    ArgumentNotFound { name: String },
+    #[error("Cannot find iteration item")]
+    IterationItemNotFound,
+    #[error("Cannot do arithmetic with None: {operation:?}")]
+    NoArithmeticWithNone { operation: BinaryOp },
+    #[error("Type mismatch")]
+    TypeMismatch,
+    #[error("Cannot compare with None: {comparison:?}")]
+    NoComparisonWithNone { comparison: BinaryOp },
+    #[error("Function call failed: {0}")]
+    FunctionCallFailed(#[from] CallFunctionError),
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -288,14 +348,17 @@ impl VM {
         local_context: &FunctionContext,
         iteration_item: &Option<Value>,
         expr: &Expr,
-    ) -> anyhow::Result<Value> {
+    ) -> Result<Value, EvalExpressionError> {
+        use EvalExpressionError::*;
         match expr {
             Expr::Value(value) => Ok(value.clone()),
             Expr::Const(name) => match local_context.constants.get(name) {
                 Some(value) => Ok(value.clone()),
                 None => match self.state.constants.get(name) {
                     Some(value) => Ok(value.clone()),
-                    None => Err(anyhow!("Cannot find constant named {:?}", name)),
+                    None => Err(ConstantNotFound {
+                        name: name.to_owned(),
+                    }),
                 },
             },
             Expr::Index(container, index) => {
@@ -305,24 +368,24 @@ impl VM {
                     Value::Vector(container) => match index {
                         Value::Scalar(Scalar::I32(index)) => match container.get(index as usize) {
                             Some(value) => Ok(value.clone()),
-                            None => Err(anyhow!("Index out of range!")),
+                            None => Err(IndexOutOfRange),
                         },
-                        _ => Err(anyhow!("Index must be I32!")),
+                        _ => Err(IndexMustBeI32),
                     },
-                    _ => Err(anyhow!("LHS is not indexable!")),
+                    _ => Err(LhsNotIndexable),
                 }
             }
             Expr::Var(name) => match local_context.variables.get(name) {
                 Some(value) => Ok(value.clone()),
-                None => Err(anyhow!("Cannot find variable named {:?}", name,)),
+                None => Err(VariableNotFound { name: name.clone() }),
             },
             Expr::Arg(name) => match local_context.arguments.get(name) {
                 Some(value) => Ok(value.clone()),
-                None => Err(anyhow!("Cannot find argument named {:?}", name)),
+                None => Err(ArgumentNotFound { name: name.clone() }),
             },
             Expr::Item => match iteration_item {
                 Some(value) => Ok(value.clone()),
-                None => Err(anyhow!("Cannot find iteration item")),
+                None => Err(IterationItemNotFound),
             },
             Expr::BinaryOp(op, left, right) => {
                 let left = self.eval_expression(local_context, iteration_item, left)?;
@@ -336,9 +399,9 @@ impl VM {
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value + right_value))
                         // }
-                        (Value::None, _) => Err(anyhow!("Cannot add number to None")),
-                        (_, Value::None) => Err(anyhow!("Cannot add number to None")),
-                        _ => Err(anyhow!("Type mismatch")),
+                        (Value::None, _) => Err(NoArithmeticWithNone { operation: *op }),
+                        (_, Value::None) => Err(NoArithmeticWithNone { operation: *op }),
+                        _ => Err(TypeMismatch),
                     },
                     BinaryOp::Sub => match (left, right) {
                         (
@@ -348,9 +411,9 @@ impl VM {
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value - right_value))
                         // }
-                        (Value::None, _) => Err(anyhow!("Cannot subtract number to None")),
-                        (_, Value::None) => Err(anyhow!("Cannot subtract number to None")),
-                        _ => Err(anyhow!("Type mismatch")),
+                        (Value::None, _) => Err(NoArithmeticWithNone { operation: *op }),
+                        (_, Value::None) => Err(NoArithmeticWithNone { operation: *op }),
+                        _ => Err(TypeMismatch),
                     },
                     BinaryOp::Mul => match (left, right) {
                         (
@@ -360,9 +423,9 @@ impl VM {
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(left_value * right_value))
                         // }
-                        (Value::None, _) => Err(anyhow!("Cannot multiply number to None")),
-                        (_, Value::None) => Err(anyhow!("Cannot multiply number to None")),
-                        _ => Err(anyhow!("Type mismatch")),
+                        (Value::None, _) => Err(NoArithmeticWithNone { operation: *op }),
+                        (_, Value::None) => Err(NoArithmeticWithNone { operation: *op }),
+                        _ => Err(TypeMismatch),
                     },
                     BinaryOp::Lt => match (left, right) {
                         (
@@ -374,9 +437,9 @@ impl VM {
                         // (Value::U32(left_value), Value::U32(right_value)) => {
                         //     Ok(Value::U32(if left_value < right_value { 1 } else { 0 }))
                         // }
-                        (Value::None, _) => Err(anyhow!("Cannot compare to number to None")),
-                        (_, Value::None) => Err(anyhow!("Cannot compare to number to None")),
-                        _ => Err(anyhow!("Type mismatch")),
+                        (Value::None, _) => Err(NoComparisonWithNone { comparison: *op }),
+                        (_, Value::None) => Err(NoComparisonWithNone { comparison: *op }),
+                        _ => Err(TypeMismatch),
                     },
                     BinaryOp::Eq => Ok(Value::Scalar(Scalar::I32(
                         self.value_equal(local_context, iteration_item, &left, &right)
@@ -386,8 +449,9 @@ impl VM {
             }
             Expr::UnaryOp { .. } => Ok(Value::None),
             Expr::Call(name, args) => self
-                .call_function(name, local_context, args)
-                .map(Returned::into_inner),
+                .call_function(name, local_context, iteration_item, args)
+                .map(Returned::into_inner)
+                .map_err(EvalExpressionError::from),
         }
     }
 
@@ -395,20 +459,31 @@ impl VM {
     pub fn call_function(
         &self,
         name: &str,
-        calling_context: &FunctionContext,
+G        calling_context: &FunctionContext,
+        iteration_item: &Option<Value>,
         args: &BTreeMap<String, Expr>,
-    ) -> anyhow::Result<Returned> {
-        self.eval_instructions(
+    ) -> Result<Returned, CallFunctionError> {
+        let mut local_context = calling_context.clone();
+        for (name, arg) in args {
+            let value = self
+                .eval_expression(&calling_context, iteration_item, &arg)
+                .map_err(Box::new)?;
+            local_context.arguments.insert(name.clone(), value);
+        }
+
+        Ok(self.eval_instructions(
             calling_context,
             &None,
             &self
                 .state
                 .functions
                 .get(name)
-                .ok_or_else(|| anyhow!(r#"function "{}" not found!"#, name))?
+                .ok_or_else(|| CallFunctionError::FunctionNotFound {
+                    name: name.to_owned(),
+                })?
                 .0,
             args,
-        )
+        )?)
     }
 
     #[cfg_attr(feature = "flame", tracing::instrument)]
@@ -418,18 +493,21 @@ impl VM {
         iteration_item: &Option<Value>,
         instructions: &Vec<Instruction>,
         args: &BTreeMap<String, Expr>,
-    ) -> anyhow::Result<Returned> {
+    ) -> Result<Returned, EvalInstructionsError> {
         let mut local_context = calling_context.clone();
         for (name, arg) in args {
-            let value = self.eval_expression(&calling_context, iteration_item, &arg)?;
+            let value = self
+                .eval_expression(&calling_context, iteration_item, &arg)
+                .map_err(Box::new)?;
             local_context.arguments.insert(name.clone(), value);
         }
 
         for instruction in instructions {
             match instruction {
                 Instruction::If(comparison, if_true, if_false) => {
-                    let comparison =
-                        self.eval_expression(&local_context, iteration_item, comparison)?;
+                    let comparison = self
+                        .eval_expression(&local_context, iteration_item, comparison)
+                        .map_err(Box::new)?;
                     let is_true = match comparison {
                         Value::Scalar(Scalar::I32(value)) => value != 0,
                         _ => false,
@@ -449,103 +527,118 @@ impl VM {
                     }
                 }
                 Instruction::ConstAssign(name, expr) => {
-                    let value = self.eval_expression(&local_context, iteration_item, &expr)?;
+                    let value = self
+                        .eval_expression(&local_context, iteration_item, &expr)
+                        .map_err(Box::new)?;
                     local_context.constants.insert(name.clone(), value);
                 }
                 Instruction::VarAssign(name, expr) => {
-                    let value = self.eval_expression(&local_context, iteration_item, &expr)?;
+                    let value = self
+                        .eval_expression(&local_context, iteration_item, &expr)
+                        .map_err(Box::new)?;
                     local_context.variables.insert(name.clone(), value);
                 }
                 Instruction::Drop(_) => {}
                 Instruction::Return(expr) => {
-                    return self
+                    return Ok(self
                         .eval_expression(&local_context, iteration_item, expr)
                         .map(Returned::Early)
+                        .map_err(Box::new)?)
                 }
-                Instruction::For(range, instructions) => match range {
-                    Range::Range {
-                        start,
-                        stop,
-                        step,
-                        mode,
-                    } => {
-                        let start = self.eval_expression(&local_context, iteration_item, start)?;
-                        let stop = self.eval_expression(&local_context, iteration_item, stop)?;
-                        let step = self.eval_expression(&local_context, iteration_item, step)?;
-                        match (start, stop, step) {
-                            (
-                                Value::Scalar(Scalar::I32(start)),
-                                Value::Scalar(Scalar::I32(stop)),
-                                Value::Scalar(Scalar::I32(step)),
-                            ) => {
-                                for v in
-                                    match &mode {
+                Instruction::For(range, instructions) => {
+                    match range {
+                        Range::Range {
+                            start,
+                            stop,
+                            step,
+                            mode,
+                        } => {
+                            let start = self
+                                .eval_expression(&local_context, iteration_item, start)
+                                .map_err(Box::new)?;
+                            let stop = self
+                                .eval_expression(&local_context, iteration_item, stop)
+                                .map_err(Box::new)?;
+                            let step = self
+                                .eval_expression(&local_context, iteration_item, step)
+                                .map_err(Box::new)?;
+                            match (start, stop, step) {
+                                (
+                                    Value::Scalar(Scalar::I32(start)),
+                                    Value::Scalar(Scalar::I32(stop)),
+                                    Value::Scalar(Scalar::I32(step)),
+                                ) => {
+                                    for v in match &mode {
                                         RangeMode::Inclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
                                         RangeMode::Exclusive => ((start as usize)..(stop as usize))
                                             .step_by(step as usize),
-                                    }
-                                {
-                                    let value = self.eval_instructions(
-                                        &local_context,
-                                        &Some(Value::Scalar(Scalar::I32(v as i32))),
-                                        instructions,
-                                        &args,
-                                    )?;
-                                    if let Returned::Early(_) = value {
-                                        return Ok(value);
-                                    }
-                                    if let Instruction::Return(_) = instruction {
-                                        return Ok(Returned::Early(value.into_inner()));
+                                    } {
+                                        let value = self.eval_instructions(
+                                            &local_context,
+                                            &Some(Value::Scalar(Scalar::I32(v as i32))),
+                                            instructions,
+                                            &args,
+                                        )?;
+                                        if let Returned::Early(_) = value {
+                                            return Ok(value);
+                                        }
+                                        if let Instruction::Return(_) = instruction {
+                                            return Ok(Returned::Early(value.into_inner()));
+                                        }
                                     }
                                 }
+                                (Value::Scalar(_), Value::Scalar(_), Value::Scalar(_)) => {
+                                    return Err(EvalInstructionsError::IteratorMustBeI32);
+                                }
+                                (Value::Vector(_), _, _) | (Value::None, _, _) => {
+                                    return Err(EvalInstructionsError::StartMustBeI32);
+                                }
+                                (_, Value::Vector(_), _) | (_, Value::None, _) => {
+                                    return Err(EvalInstructionsError::StopMustBeI32);
+                                }
+                                (_, _, Value::Vector(_)) | (_, _, Value::None) => {
+                                    return Err(EvalInstructionsError::StepMustBeI32);
+                                }
                             }
-                            (Value::Scalar(_), Value::Scalar(_), Value::Scalar(_)) => {
-                                bail!(r#"Only I32 is allowed for iteration!"#)
-                            }
-                            (Value::Vector(_), _, _) | (Value::None, _, _) => {
-                                bail!(r#"Field "start" must be a vector!"#)
-                            }
-                            (_, Value::Vector(_), _) | (_, Value::None, _) => {
-                                bail!(r#"Field "stop" must be a vector!"#)
-                            }
-                            (_, _, Value::Vector(_)) | (_, _, Value::None) => {
-                                bail!(r#"Field "step" must be a vector!"#)
+                        }
+                        Range::Values(values) => {
+                            for v in values {
+                                let value = self.eval_instructions(
+                                    &local_context,
+                                    &Some(v.clone()),
+                                    instructions,
+                                    &args,
+                                )?;
+                                if let Returned::Early(_) = value {
+                                    return Ok(value);
+                                }
                             }
                         }
                     }
-                    Range::Values(values) => {
-                        for v in values {
-                            let value = self.eval_instructions(
-                                &local_context,
-                                &Some(v.clone()),
-                                instructions,
-                                &args,
-                            )?;
-                            if let Returned::Early(_) = value {
-                                return Ok(value);
-                            }
-                        }
-                    }
-                },
+                }
             }
         }
         Ok(Returned::Finished(Value::None))
     }
 
     #[cfg_attr(feature = "flame", tracing::instrument)]
-    pub fn add_constant(&mut self, name: &str, value: Value) -> anyhow::Result<()> {
+    pub fn add_constant(&mut self, name: &str, value: Value) -> Result<(), AddConstantError> {
         if self.state.constants.contains_key(name) {
-            bail!(r#"constant "{}" already exists"#, name);
+            return Err(AddConstantError::ConstantAlreadyExists {
+                name: name.to_owned(),
+            });
         }
         _ = self.state.constants.insert(name.to_owned(), value);
         Ok(())
     }
 
     #[cfg_attr(feature = "flame", tracing::instrument)]
-    pub fn add_function(&mut self, name: &str, func: Function) -> anyhow::Result<()> {
+    pub fn add_function(&mut self, name: &str, func: Function) -> Result<(), AddFunctionError> {
         if self.state.functions.contains_key(name) {
-            bail!(r#"function "{}" already exists"#, name);
+            return Err(AddFunctionError::FunctionAlreadyExists {
+                name: name.to_owned(),
+            });
         }
         _ = self.state.functions.insert(name.to_owned(), func);
         Ok(())
