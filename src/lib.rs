@@ -459,7 +459,7 @@ impl VM {
     pub fn call_function(
         &self,
         name: &str,
-G        calling_context: &FunctionContext,
+        calling_context: &FunctionContext,
         iteration_item: &Option<Value>,
         args: &BTreeMap<String, Expr>,
     ) -> Result<Returned, CallFunctionError> {
